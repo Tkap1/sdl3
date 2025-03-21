@@ -1,4 +1,8 @@
 
+#define array_count(arr) (sizeof((arr)) / sizeof((arr)[0]))
+#define invalid_default_case default: { assert(false); }
+#define assert(condition) if(!(condition)) { printf("FUCK\n"); exit(1); }
+
 union s_m4
 {
 	float all[16];
@@ -10,6 +14,14 @@ struct s_v3
 	float x;
 	float y;
 	float z;
+};
+
+struct s_v4
+{
+	float x;
+	float y;
+	float z;
+	float w;
 };
 
 struct s_vertex
@@ -40,8 +52,7 @@ struct s_player
 	s_v3 vel;
 };
 
-func SDL_GPUShader* LoadShader(
-	SDL_GPUDevice* device,
+func SDL_GPUShader* load_shader(
 	const char* shaderFilename,
 	Uint32 samplerCount,
 	Uint32 uniformBufferCount,
@@ -65,6 +76,9 @@ func float clamp(float curr, float min_val, float max_val);
 func float smoothstep2(float edge0, float edge1, float x);
 func s_v3 get_triangle_normal(s_v3 v1, s_v3 v2, s_v3 v3);
 func int roundfi(float x);
+func SDL_GPUGraphicsPipeline* create_pipeline(
+	SDL_GPUShader* vertex_shader, SDL_GPUShader* fragment_shader, SDL_GPUFillMode fill_mode, SDL_GPUVertexElementFormat* element_format_arr, int element_format_count
+);
 
 template <typename T>
 func constexpr s_v3 v3(T v)
@@ -76,6 +90,18 @@ template <typename A, typename B, typename C>
 func constexpr s_v3 v3(A x, B y, C z)
 {
 	return {(float)x, (float)y, (float)z};
+}
+
+template <typename T>
+func constexpr s_v4 v4(T v)
+{
+	return {(float)v, (float)v, (float)v, (float)v};
+}
+
+template <typename A, typename B, typename C, typename D>
+func constexpr s_v4 v4(A x, B y, C z, D w)
+{
+	return {(float)x, (float)y, (float)z, (float)w};
 }
 
 func constexpr s_v3 operator+(s_v3 a, s_v3 b)
