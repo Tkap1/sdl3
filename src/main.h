@@ -34,11 +34,20 @@ struct s_vertex
 	float a;
 };
 
-struct s_vertex_uniform_data
+struct s_vertex_uniform_data0
 {
 	s_m4 model;
 	s_m4 view;
 	s_m4 projection;
+};
+
+struct s_vertex_uniform_data1
+{
+	s_m4 model;
+	s_m4 view;
+	s_m4 projection;
+	s_m4 light_view;
+	s_m4 light_projection;
 };
 
 struct s_fragment_uniform_data
@@ -77,8 +86,10 @@ func float smoothstep2(float edge0, float edge1, float x);
 func s_v3 get_triangle_normal(s_v3 v1, s_v3 v2, s_v3 v3);
 func int roundfi(float x);
 func SDL_GPUGraphicsPipeline* create_pipeline(
-	SDL_GPUShader* vertex_shader, SDL_GPUShader* fragment_shader, SDL_GPUFillMode fill_mode, SDL_GPUVertexElementFormat* element_format_arr, int element_format_count
+	SDL_GPUShader* vertex_shader, SDL_GPUShader* fragment_shader, SDL_GPUFillMode fill_mode, int num_color_targets, SDL_GPUVertexElementFormat* element_format_arr, int element_format_count
 );
+func s_m4 make_orthographic(float Left, float Right, float Bottom, float Top, float Near, float Far);
+func s_m4 make_orthographic_ai(float left, float right, float bottom, float top, float near, float far);
 
 template <typename T>
 func constexpr s_v3 v3(T v)

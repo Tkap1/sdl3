@@ -14,6 +14,7 @@ global char* BasePath = "";
 global SDL_GPUGraphicsPipeline* fill_pipeline;
 global SDL_GPUGraphicsPipeline* line_pipeline;
 global SDL_GPUGraphicsPipeline* screen_pipeline;
+global SDL_GPUGraphicsPipeline* depth_only_pipeline;
 global SDL_GPUTexture* scene_depth_texture;
 global SDL_GPUTexture* shadow_texture;
 global SDL_GPUSampler* shadow_texture_sampler;
@@ -56,7 +57,7 @@ int main()
 		return -1;
 	}
 
-	SDL_GPUShader* fragmentShader = load_shader("PositionColor.frag", 0, 1, 0, 0);
+	SDL_GPUShader* fragmentShader = load_shader("PositionColor.frag", 1, 1, 0, 0);
 	if(fragmentShader == null) {
 		SDL_Log("Failed to create fragment shader!");
 		return -1;
@@ -65,15 +66,26 @@ int main()
 	SDL_GPUShader* screen_vertex_shader = load_shader("screen.vert", 0, 1, 0, 0);
 	SDL_GPUShader* screen_fragment_shader = load_shader("screen.frag", 1, 0, 0, 0);
 
+	SDL_GPUShader* depth_only_vertex_shader = load_shader("depth_only.vert", 0, 1, 0, 0);
+	SDL_GPUShader* depth_only_fragment_shader = load_shader("depth_only.frag", 0, 0, 0, 0);
+
 	{
 		SDL_GPUVertexElementFormat arr[3] = zero;
 		arr[0] = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3;
 		arr[1] = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3;
 		arr[2] = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4;
-		fill_pipeline = create_pipeline(vertexShader, fragmentShader, SDL_GPU_FILLMODE_FILL, arr, array_count(arr));
-		line_pipeline = create_pipeline(vertexShader, fragmentShader, SDL_GPU_FILLMODE_LINE, arr, array_count(arr));
+		fill_pipeline = create_pipeline(vertexShader, fragmentShader, SDL_GPU_FILLMODE_FILL, 1, arr, array_count(arr));
+		line_pipeline = create_pipeline(vertexShader, fragmentShader, SDL_GPU_FILLMODE_LINE, 1, arr, array_count(arr));
 	}
-	screen_pipeline = create_pipeline(screen_vertex_shader, screen_fragment_shader, SDL_GPU_FILLMODE_FILL, null, 0);
+	screen_pipeline = create_pipeline(screen_vertex_shader, screen_fragment_shader, SDL_GPU_FILLMODE_FILL, 1, null, 0);
+
+	{
+		SDL_GPUVertexElementFormat arr[3] = zero;
+		arr[0] = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3;
+		arr[1] = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3;
+		arr[2] = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4;
+		depth_only_pipeline = create_pipeline(depth_only_vertex_shader, depth_only_fragment_shader, SDL_GPU_FILLMODE_FILL, 0, arr, array_count(arr));
+	}
 
 	// Clean up shader resources
 	SDL_ReleaseGPUShader(g_device, vertexShader);
@@ -95,17 +107,32 @@ int main()
 		scene_depth_texture = SDL_CreateGPUTexture(g_device, &info);
 	}
 
+	// {
+	// 	SDL_GPUTextureFormat format = SDL_GetGPUSwapchainTextureFormat(g_device, g_window);
+	// 	SDL_GPUTextureCreateInfo info = zero;
+	// 	info.type = SDL_GPU_TEXTURETYPE_2D;
+	// 	info.width = c_window_width;
+	// 	info.height = c_window_height;
+	// 	info.layer_count_or_depth = 1;
+	// 	info.num_levels = 1;
+	// 	info.sample_count = SDL_GPU_SAMPLECOUNT_1;
+	// 	info.format = format;
+	// 	info.usage = SDL_GPU_TEXTUREUSAGE_SAMPLER | SDL_GPU_TEXTUREUSAGE_COLOR_TARGET;
+	// 	shadow_texture = SDL_CreateGPUTexture(g_device, &info);
+	// }
+
+	b8 show_shadow_map = false;
+
 	{
-		SDL_GPUTextureFormat format = SDL_GetGPUSwapchainTextureFormat(g_device, g_window);
 		SDL_GPUTextureCreateInfo info = zero;
 		info.type = SDL_GPU_TEXTURETYPE_2D;
-		info.width = c_window_width;
-		info.height = c_window_height;
+		info.width = 1024;
+		info.height = 1024;
 		info.layer_count_or_depth = 1;
 		info.num_levels = 1;
 		info.sample_count = SDL_GPU_SAMPLECOUNT_1;
-		info.format = format;
-		info.usage = SDL_GPU_TEXTUREUSAGE_SAMPLER | SDL_GPU_TEXTUREUSAGE_COLOR_TARGET;
+		info.format = SDL_GPU_TEXTUREFORMAT_D24_UNORM;
+		info.usage = SDL_GPU_TEXTUREUSAGE_SAMPLER | SDL_GPU_TEXTUREUSAGE_DEPTH_STENCIL_TARGET;
 		shadow_texture = SDL_CreateGPUTexture(g_device, &info);
 	}
 
@@ -113,9 +140,12 @@ int main()
 		SDL_GPUSamplerCreateInfo info = zero;
 		info.min_filter = SDL_GPU_FILTER_NEAREST;
 		info.mag_filter = SDL_GPU_FILTER_NEAREST;
-		info.address_mode_u = SDL_GPU_SAMPLERADDRESSMODE_REPEAT;
-		info.address_mode_v = SDL_GPU_SAMPLERADDRESSMODE_REPEAT;
-		info.address_mode_w = SDL_GPU_SAMPLERADDRESSMODE_REPEAT;
+		// info.address_mode_u = SDL_GPU_SAMPLERADDRESSMODE_REPEAT;
+		// info.address_mode_v = SDL_GPU_SAMPLERADDRESSMODE_REPEAT;
+		// info.address_mode_w = SDL_GPU_SAMPLERADDRESSMODE_REPEAT;
+		info.address_mode_u = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE;
+		info.address_mode_v = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE;
+		info.address_mode_w = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE;
 		shadow_texture_sampler = SDL_CreateGPUSampler(g_device, &info);
 	}
 
@@ -168,6 +198,9 @@ int main()
 				else if(event.key.key == SDLK_SPACE) {
 					player.vel.z = 0.5f;
 				}
+				else if(event.key.key == SDLK_G) {
+					show_shadow_map = !show_shadow_map;
+				}
 			}
 			else if(event.type == SDL_EVENT_MOUSE_MOTION) {
 				constexpr float sens = 0.002f;
@@ -196,6 +229,7 @@ int main()
 		{
 			b8* key_arr = (b8*)SDL_GetKeyboardState(null);
 			s_v3 cam_side = v3_cross(cam_front, v3(0, 0, 1));
+			cam_side = v3_normalized(cam_side);
 			s_v3 temp_front = cam_front;
 			temp_front.z = 0;
 			temp_front = v3_normalized(temp_front);
@@ -234,7 +268,8 @@ int main()
 				fnl_state noise_arr[c_biome_count + 1] = zero;
 				for(int i = 0; i < c_biome_count + 1; i += 1) {
 					noise_arr[i] = fnlCreateState();
-					noise_arr[i].seed = (u32)__rdtsc();
+					// noise_arr[i].seed = (u32)__rdtsc();
+					noise_arr[i].seed = 1;
 					noise_arr[i].noise_type = FNL_NOISE_OPENSIMPLEX2;
 				}
 				noise_arr[0].frequency = 0.1f;
@@ -381,16 +416,23 @@ int main()
 
 		if(swapchain_texture != null) {
 
-			// vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv		draw scene start		vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv
+			float s = sinf(g_time) * 0;
+			s_v3 sun_pos = v3(0, c_tiles_y, -10);
+			s_v3 sun_dir = v3_normalized(v3(1, 0, -0.05));
+
+			s_m4 light_view = look_at(sun_pos, sun_pos + sun_dir, v3(0, 0, 1));
+			s_m4 light_projection = make_orthographic(0, c_tiles_x, -30, 30, 0, c_tiles_y);
+
+			// vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv		scene to depth start		vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv
 			{
-				SDL_GPUColorTargetInfo color_target_info = { 0 };
-				color_target_info.texture = shadow_texture;
-				color_target_info.clear_color = { 0.2f, 0.2f, 0.3f, 1.0f };
-				color_target_info.load_op = SDL_GPU_LOADOP_CLEAR;
-				color_target_info.store_op = SDL_GPU_STOREOP_STORE;
+				// SDL_GPUColorTargetInfo color_target_info = { 0 };
+				// color_target_info.texture = shadow_texture;
+				// color_target_info.clear_color = { 0.2f, 0.2f, 0.3f, 1.0f };
+				// color_target_info.load_op = SDL_GPU_LOADOP_CLEAR;
+				// color_target_info.store_op = SDL_GPU_STOREOP_STORE;
 
 				SDL_GPUDepthStencilTargetInfo depth_stencil_target_info = zero;
-				depth_stencil_target_info.texture = scene_depth_texture;
+				depth_stencil_target_info.texture = shadow_texture;
 				depth_stencil_target_info.cycle = true;
 				depth_stencil_target_info.clear_depth = 1;
 				depth_stencil_target_info.load_op = SDL_GPU_LOADOP_CLEAR;
@@ -398,32 +440,31 @@ int main()
 				depth_stencil_target_info.stencil_load_op = SDL_GPU_LOADOP_DONT_CARE;
 				depth_stencil_target_info.stencil_store_op = SDL_GPU_STOREOP_DONT_CARE;
 
-				SDL_GPURenderPass* render_pass = SDL_BeginGPURenderPass(cmdbuf, &color_target_info, 1, &depth_stencil_target_info);
-				SDL_BindGPUGraphicsPipeline(render_pass, UseWireframeMode ? line_pipeline : fill_pipeline);
+				SDL_GPURenderPass* render_pass = SDL_BeginGPURenderPass(cmdbuf, null, 0, &depth_stencil_target_info);
+				SDL_BindGPUGraphicsPipeline(render_pass, depth_only_pipeline);
 				{
 					SDL_GPUBufferBinding binding = zero;
 					binding.buffer = VertexBuffer;
 					SDL_BindGPUVertexBuffers(render_pass, 0, &binding, 1);
 				}
 				{
-					s_vertex_uniform_data data = zero;
-					// data.model = m4_rotate(g_time, {0, 0, 1});
+					s_vertex_uniform_data0 data = zero;
 					data.model = m4_identity();
-					data.view = look_at(cam_pos, cam_pos + cam_front, cam_up);
-					data.projection = make_perspective(90, c_window_width / (float)c_window_height, 0.01f, 500.0f);
+					data.view = light_view;
+					data.projection = light_projection;
 					SDL_PushGPUVertexUniformData(cmdbuf, 0, &data, sizeof(data));
 				}
-				{
-					s_fragment_uniform_data data = zero;
-					data.cam_pos = cam_pos;
-					SDL_PushGPUFragmentUniformData(cmdbuf, 0, &data, sizeof(data));
-				}
+				// {
+				// 	s_fragment_uniform_data data = zero;
+				// 	data.cam_pos = cam_pos;
+				// 	SDL_PushGPUFragmentUniformData(cmdbuf, 0, &data, sizeof(data));
+				// }
 				SDL_DrawGPUPrimitives(render_pass, c_vertex_count, 1, 0, 0);
 				SDL_EndGPURenderPass(render_pass);
 			}
-			// ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^		draw scene end		^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+			// ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^		scene to depth end		^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-			// vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv		scene to screen start		vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv
+			// vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv		draw scene start		vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv
 			{
 				SDL_GPUColorTargetInfo color_target_info = { 0 };
 				color_target_info.texture = swapchain_texture;
@@ -441,10 +482,31 @@ int main()
 				depth_stencil_target_info.stencil_store_op = SDL_GPU_STOREOP_DONT_CARE;
 
 				SDL_GPURenderPass* render_pass = SDL_BeginGPURenderPass(cmdbuf, &color_target_info, 1, &depth_stencil_target_info);
-				SDL_BindGPUGraphicsPipeline(render_pass, screen_pipeline);
+				SDL_BindGPUGraphicsPipeline(render_pass, fill_pipeline);
 				{
-					s_v4 color = v4(1, 1, 1, 1);
-					SDL_PushGPUVertexUniformData(cmdbuf, 0, &color, sizeof(color));
+					SDL_GPUBufferBinding binding = zero;
+					binding.buffer = VertexBuffer;
+					SDL_BindGPUVertexBuffers(render_pass, 0, &binding, 1);
+				}
+				{
+					s_vertex_uniform_data1 data = zero;
+					data.model = m4_identity();
+					if(show_shadow_map) {
+						data.view = light_view;
+						data.projection = light_projection;
+					}
+					else {
+						data.view = look_at(cam_pos, cam_pos + cam_front, cam_up);
+						data.projection = make_perspective(90, c_window_width / (float)c_window_height, 0.01f, 500.0f);
+					}
+					data.light_view = light_view;
+					data.light_projection = light_projection;
+					SDL_PushGPUVertexUniformData(cmdbuf, 0, &data, sizeof(data));
+				}
+				{
+					s_fragment_uniform_data data = zero;
+					data.cam_pos = cam_pos;
+					SDL_PushGPUFragmentUniformData(cmdbuf, 0, &data, sizeof(data));
 				}
 				{
 					SDL_GPUTextureSamplerBinding binding = zero;
@@ -452,10 +514,44 @@ int main()
 					binding.sampler = shadow_texture_sampler;
 					SDL_BindGPUFragmentSamplers(render_pass, 0, &binding, 1);
 				}
-
-				SDL_DrawGPUPrimitives(render_pass, 6, 1, 0, 0);
+				SDL_DrawGPUPrimitives(render_pass, c_vertex_count, 1, 0, 0);
 				SDL_EndGPURenderPass(render_pass);
 			}
+			// ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^		draw scene end		^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+			// vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv		scene to screen start		vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv
+			// {
+			// 	SDL_GPUColorTargetInfo color_target_info = { 0 };
+			// 	color_target_info.texture = swapchain_texture;
+			// 	color_target_info.clear_color = { 0.2f, 0.2f, 0.3f, 1.0f };
+			// 	color_target_info.load_op = SDL_GPU_LOADOP_CLEAR;
+			// 	color_target_info.store_op = SDL_GPU_STOREOP_STORE;
+
+			// 	SDL_GPUDepthStencilTargetInfo depth_stencil_target_info = zero;
+			// 	depth_stencil_target_info.texture = scene_depth_texture;
+			// 	depth_stencil_target_info.cycle = true;
+			// 	depth_stencil_target_info.clear_depth = 1;
+			// 	depth_stencil_target_info.load_op = SDL_GPU_LOADOP_CLEAR;
+			// 	depth_stencil_target_info.store_op = SDL_GPU_STOREOP_STORE;
+			// 	depth_stencil_target_info.stencil_load_op = SDL_GPU_LOADOP_DONT_CARE;
+			// 	depth_stencil_target_info.stencil_store_op = SDL_GPU_STOREOP_DONT_CARE;
+
+			// 	SDL_GPURenderPass* render_pass = SDL_BeginGPURenderPass(cmdbuf, &color_target_info, 1, &depth_stencil_target_info);
+			// 	SDL_BindGPUGraphicsPipeline(render_pass, screen_pipeline);
+			// 	{
+			// 		s_v4 color = v4(1, 1, 1, 1);
+			// 		SDL_PushGPUVertexUniformData(cmdbuf, 0, &color, sizeof(color));
+			// 	}
+			// 	{
+			// 		SDL_GPUTextureSamplerBinding binding = zero;
+			// 		binding.texture = shadow_texture;
+			// 		binding.sampler = shadow_texture_sampler;
+			// 		SDL_BindGPUFragmentSamplers(render_pass, 0, &binding, 1);
+			// 	}
+
+			// 	SDL_DrawGPUPrimitives(render_pass, 6, 1, 0, 0);
+			// 	SDL_EndGPURenderPass(render_pass);
+			// }
 			// ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^		scene to screen end		^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 		}
 
@@ -723,14 +819,14 @@ func int roundfi(float x)
 }
 
 func SDL_GPUGraphicsPipeline* create_pipeline(
-	SDL_GPUShader* vertex_shader, SDL_GPUShader* fragment_shader, SDL_GPUFillMode fill_mode, SDL_GPUVertexElementFormat* element_format_arr, int element_format_count
+	SDL_GPUShader* vertex_shader, SDL_GPUShader* fragment_shader, SDL_GPUFillMode fill_mode, int num_color_targets, SDL_GPUVertexElementFormat* element_format_arr, int element_format_count
 )
 {
 	SDL_GPUGraphicsPipelineCreateInfo pipeline_create_info = zero;
 	pipeline_create_info.primitive_type = SDL_GPU_PRIMITIVETYPE_TRIANGLELIST;
 	pipeline_create_info.vertex_shader = vertex_shader;
 	pipeline_create_info.fragment_shader = fragment_shader;
-	pipeline_create_info.target_info.num_color_targets = 1;
+	pipeline_create_info.target_info.num_color_targets = num_color_targets;
 	pipeline_create_info.target_info.has_depth_stencil_target = true;
 	pipeline_create_info.target_info.depth_stencil_format = SDL_GPU_TEXTUREFORMAT_D24_UNORM;
 	pipeline_create_info.depth_stencil_state.enable_depth_test = true;
@@ -740,7 +836,7 @@ func SDL_GPUGraphicsPipeline* create_pipeline(
 	SDL_GPUColorTargetDescription color_target_description = {
 		.format = SDL_GetGPUSwapchainTextureFormat(g_device, g_window)
 	};
-	pipeline_create_info.target_info.color_target_descriptions = &color_target_description;
+	pipeline_create_info.target_info.color_target_descriptions = num_color_targets > 0 ? &color_target_description : null;
 	pipeline_create_info.vertex_input_state.num_vertex_buffers = element_format_count > 0 ? 1 : 0;
 	SDL_GPUVertexBufferDescription gpu_vertex_buffer_description = zero;
 	gpu_vertex_buffer_description.input_rate = SDL_GPU_VERTEXINPUTRATE_VERTEX;
@@ -775,4 +871,40 @@ func SDL_GPUGraphicsPipeline* create_pipeline(
 		return null;
 	}
 	return result;
+}
+
+func s_m4 make_orthographic(float Left, float Right, float Bottom, float Top, float Near, float Far)
+{
+	s_m4 Result = zero;
+
+	Result.all2[0][0] = 2.0f / (Right - Left);
+	Result.all2[1][1] = 2.0f / (Top - Bottom);
+	Result.all2[2][2] = 2.0f / (Near - Far);
+	Result.all2[3][3] = 1.0f;
+
+	Result.all2[3][0] = (Left + Right) / (Left - Right);
+	Result.all2[3][1] = (Bottom + Top) / (Bottom - Top);
+	Result.all2[3][2] = (Near + Far) / (Near - Far);
+
+	return (Result);
+}
+
+func s_m4 make_orthographic_ai(float left, float right, float bottom, float top, float near, float far)
+{
+	s_m4 matrix = zero;
+
+	float rl = right - left;
+	float tb = top - bottom;
+	float fn = far - near;
+
+	matrix.all[0] = 2.0f / rl;
+	matrix.all[5] = 2.0f / tb;
+	matrix.all[10] = -2.0f / fn;
+	matrix.all[15] = 1.0f;
+
+	matrix.all[12] = -(right + left) / rl;
+	matrix.all[13] = -(top + bottom) / tb;
+	matrix.all[14] = -(far + near) / fn;
+
+	return matrix;
 }
