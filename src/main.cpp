@@ -33,6 +33,7 @@ global float cam_pitch;
 global s_vertex* transfer_data;
 global SDL_GPUDevice* g_device;
 global SDL_Window* g_window;
+global SDL_GPUTextureFormat g_depth_texute_format = SDL_GPU_TEXTUREFORMAT_INVALID;
 
 int main()
 {
@@ -50,6 +51,27 @@ int main()
 
 	g_window = SDL_CreateWindow("3D", c_window_width, c_window_height, 0);
 	SDL_ClaimWindowForGPUDevice(g_device, g_window);
+
+	// prefered depth texture format in order of preference
+	SDL_GPUTextureFormat prefered_depth_formats[] =
+	{
+		SDL_GPU_TEXTUREFORMAT_D24_UNORM,
+		SDL_GPU_TEXTUREFORMAT_D32_FLOAT,
+		SDL_GPU_TEXTUREFORMAT_D24_UNORM_S8_UINT,
+		SDL_GPU_TEXTUREFORMAT_D32_FLOAT_S8_UINT,
+	};
+
+	for (int i = 0; i < array_count(prefered_depth_formats); i += 1)
+	{
+		SDL_GPUTextureFormat format = prefered_depth_formats[i];
+		bool is_supported = SDL_GPUTextureSupportsFormat(g_device, (SDL_GPUTextureFormat) format, SDL_GPU_TEXTURETYPE_2D, SDL_GPU_TEXTUREUSAGE_DEPTH_STENCIL_TARGET);
+		printf("texture format index: %i, value: %i is supported = %s\n", i, format, is_supported ? "true" : "false");
+		if (is_supported && g_depth_texute_format == SDL_GPU_TEXTUREFORMAT_INVALID)
+			g_depth_texute_format = format;
+	}
+
+	// your device does not support any required depth texutre format
+	assert(g_depth_texute_format != SDL_GPU_TEXTUREFORMAT_INVALID);
 
 	SDL_GPUShader* vertexShader = load_shader("PositionColor.vert", 0, 1, 0, 0);
 	if(vertexShader == null) {
@@ -104,7 +126,7 @@ int main()
 		info.layer_count_or_depth = 1;
 		info.num_levels = 1;
 		info.sample_count = SDL_GPU_SAMPLECOUNT_1;
-		info.format = SDL_GPU_TEXTUREFORMAT_D24_UNORM;
+		info.format = g_depth_texute_format;
 		info.usage = SDL_GPU_TEXTUREUSAGE_SAMPLER | SDL_GPU_TEXTUREUSAGE_DEPTH_STENCIL_TARGET;
 		scene_depth_texture = SDL_CreateGPUTexture(g_device, &info);
 	}
@@ -133,7 +155,7 @@ int main()
 		info.layer_count_or_depth = 1;
 		info.num_levels = 1;
 		info.sample_count = SDL_GPU_SAMPLECOUNT_1;
-		info.format = SDL_GPU_TEXTUREFORMAT_D24_UNORM;
+		info.format = g_depth_texute_format;
 		info.usage = SDL_GPU_TEXTUREUSAGE_SAMPLER | SDL_GPU_TEXTUREUSAGE_DEPTH_STENCIL_TARGET;
 		shadow_texture = SDL_CreateGPUTexture(g_device, &info);
 	}
@@ -431,16 +453,20 @@ int main()
 
 		if(swapchain_texture != null) {
 
-			float s = sinf(g_time) * 0;
-			s_v3 sun_pos = v3(0, c_tiles_y / 2, 10);
-			s_v3 sun_dir = v3_normalized(v3(1, 0, -0.1f));
+			float s = sinf(g_time * 0.2f);
+			s_v3 sun_pos = v3(0, 0, 20);
+			// the sun direction along the x axis with some down direction
+			s_v3 sun_dir = v3_normalized(v3(1, 0, (s * 0.5f + 0.5f) * -0.2f));
 
 			s_m4 light_view = look_at(sun_pos, sun_pos + sun_dir, v3(0, 0, 1));
-			// s_m4 light_projection = make_orthographic(0, c_tiles_x, -30, 30, 0, c_tiles_y);
-			s_m4 light_projection = make_orthographic(-c_tiles_x, c_tiles_x, -100, 100, -c_tiles_y, c_tiles_y);
+
+			// we view the world along the x axis (see sun_dir), the near/far values are relative to the c_files_x
+			// we see the worls y axis as our screen x axis, so we set left/right along that axis -c_tiles_y/0
+			s_m4 light_projection = make_orthographic(-c_tiles_y, 0, -30, 100, -100 - c_tiles_x, 100 + c_tiles_x);
 
 			// vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv		scene to depth start		vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv
 			{
+
 				SDL_GPUDepthStencilTargetInfo depth_stencil_target_info = zero;
 				depth_stencil_target_info.texture = shadow_texture;
 				depth_stencil_target_info.cycle = true;
@@ -864,9 +890,9 @@ func SDL_GPUGraphicsPipeline* create_pipeline(
 	pipeline_create_info.fragment_shader = fragment_shader;
 	pipeline_create_info.target_info.num_color_targets = num_color_targets;
 	pipeline_create_info.target_info.has_depth_stencil_target = has_depth;
-	pipeline_create_info.target_info.depth_stencil_format = SDL_GPU_TEXTUREFORMAT_D24_UNORM;
 	pipeline_create_info.depth_stencil_state.enable_depth_test = has_depth;
 	pipeline_create_info.depth_stencil_state.enable_depth_write = has_depth;
+	pipeline_create_info.target_info.depth_stencil_format = g_depth_texute_format;
 	pipeline_create_info.depth_stencil_state.compare_op = SDL_GPU_COMPAREOP_LESS;
 	pipeline_create_info.depth_stencil_state.write_mask = 0xFF;
 	SDL_GPUColorTargetDescription color_target_description = {
@@ -913,13 +939,15 @@ func s_m4 make_orthographic(float Left, float Right, float Bottom, float Top, fl
 {
 	s_m4 Result = zero;
 
+	// xy values are mapped to -1 to 1 range for viewport mapping
+	// z values are mapped to 0 to 1 range instead of -1 to 1 for depth writing
 	Result.all2[0][0] = 2.0f / (Right - Left);
 	Result.all2[1][1] = 2.0f / (Top - Bottom);
-	Result.all2[2][2] = 2.0f / (Near - Far);
+	Result.all2[2][2] = 1.0f / (Near - Far);
 	Result.all2[3][3] = 1.0f;
 
 	Result.all2[3][0] = (Left + Right) / (Left - Right);
-	Result.all2[3][1] = (Bottom + Top) / (Bottom - Top);
+	Result.all2[3][1] = 0.5f * (Bottom + Top) / (Bottom - Top);
 	Result.all2[3][2] = (Near + Far) / (Near - Far);
 
 	return (Result);
