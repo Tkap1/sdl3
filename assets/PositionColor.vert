@@ -20,7 +20,6 @@ layout (set = 1, binding = 0) uniform uniform_block {
 void main()
 {
 	vec4 pos = projection * view * model * vec4(vertex, 1.0);
-	// pos.z = pos.z * 0.5 + 0.5;
 	gl_Position = pos;
 	v_world_pos = (model * vec4(vertex, 1.0)).xyz;
 	v_color = color;

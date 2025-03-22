@@ -12,6 +12,7 @@ layout (set = 1, binding = 0) uniform uniform_block {
 
 void main()
 {
-	vec4 pos = projection * view * model * vec4(vertex, 1.0);
+	vec3 temp = vertex;
+	vec4 pos = projection * view * model * vec4(temp, 1.0);
 	gl_Position = pos;
 }

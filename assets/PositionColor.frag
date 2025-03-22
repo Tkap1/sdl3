@@ -29,7 +29,11 @@ void main()
 	vec3 color = v_color.rgb * m;
 	vec3 temp0 = v_light_frag_pos.xyz / v_light_frag_pos.w;
 	temp0 = temp0 * 0.5 + 0.5;
-	// temp0.y = 1.0 - temp0.y;
+	temp0.y = 1.0 - temp0.y;
+	if(temp0.x > 1 || temp0.x < 0 || temp0.y > 1 || temp0.y < 0) {
+		out_color = vec4(1, 0, 0, 1);
+		return;
+	}
 	float closest_depth = texture(shadow_map, temp0.xy).r;
 	float curr_depth = temp0.z;
 	float shadow = (curr_depth > closest_depth) ? 1.0 : 0.0;
@@ -43,6 +47,7 @@ void main()
 	// ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^		fog end		^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 	// color = vec3(closest_depth);
+	color = vec3(curr_depth);
 	// color = vec3(temp0.x, temp0.y, 0.0);
 	// vec3 color = normal * 0.5 + 0.5;
 	out_color = vec4(color, v_color.a);

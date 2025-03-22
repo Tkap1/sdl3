@@ -9,6 +9,13 @@ union s_m4
 	float all2[4][4];
 };
 
+enum e_view_state
+{
+	e_view_state_default,
+	e_view_state_shadow_map,
+	e_view_state_depth,
+};
+
 struct s_v3
 {
 	float x;
@@ -86,7 +93,9 @@ func float smoothstep2(float edge0, float edge1, float x);
 func s_v3 get_triangle_normal(s_v3 v1, s_v3 v2, s_v3 v3);
 func int roundfi(float x);
 func SDL_GPUGraphicsPipeline* create_pipeline(
-	SDL_GPUShader* vertex_shader, SDL_GPUShader* fragment_shader, SDL_GPUFillMode fill_mode, int num_color_targets, SDL_GPUVertexElementFormat* element_format_arr, int element_format_count
+	SDL_GPUShader* vertex_shader, SDL_GPUShader* fragment_shader, SDL_GPUFillMode fill_mode, int num_color_targets,
+	SDL_GPUVertexElementFormat* element_format_arr, int element_format_count,
+	b8 has_depth
 );
 func s_m4 make_orthographic(float Left, float Right, float Bottom, float Top, float Near, float Far);
 func s_m4 make_orthographic_ai(float left, float right, float bottom, float top, float near, float far);
