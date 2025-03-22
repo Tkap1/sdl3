@@ -33,7 +33,7 @@ global float cam_pitch;
 global s_vertex* transfer_data;
 global SDL_GPUDevice* g_device;
 global SDL_Window* g_window;
-global SDL_GPUTextureFormat g_depth_texute_format = SDL_GPU_TEXTUREFORMAT_INVALID;
+global SDL_GPUTextureFormat g_depth_texture_format = SDL_GPU_TEXTUREFORMAT_INVALID;
 
 int main()
 {
@@ -66,12 +66,12 @@ int main()
 		SDL_GPUTextureFormat format = prefered_depth_formats[i];
 		bool is_supported = SDL_GPUTextureSupportsFormat(g_device, (SDL_GPUTextureFormat) format, SDL_GPU_TEXTURETYPE_2D, SDL_GPU_TEXTUREUSAGE_DEPTH_STENCIL_TARGET);
 		printf("texture format index: %i, value: %i is supported = %s\n", i, format, is_supported ? "true" : "false");
-		if (is_supported && g_depth_texute_format == SDL_GPU_TEXTUREFORMAT_INVALID)
-			g_depth_texute_format = format;
+		if (is_supported && g_depth_texture_format == SDL_GPU_TEXTUREFORMAT_INVALID)
+			g_depth_texture_format = format;
 	}
 
 	// your device does not support any required depth texutre format
-	assert(g_depth_texute_format != SDL_GPU_TEXTUREFORMAT_INVALID);
+	assert(g_depth_texture_format != SDL_GPU_TEXTUREFORMAT_INVALID);
 
 	SDL_GPUShader* vertexShader = load_shader("PositionColor.vert", 0, 1, 0, 0);
 	if(vertexShader == null) {
@@ -126,7 +126,7 @@ int main()
 		info.layer_count_or_depth = 1;
 		info.num_levels = 1;
 		info.sample_count = SDL_GPU_SAMPLECOUNT_1;
-		info.format = g_depth_texute_format;
+		info.format = g_depth_texture_format;
 		info.usage = SDL_GPU_TEXTUREUSAGE_SAMPLER | SDL_GPU_TEXTUREUSAGE_DEPTH_STENCIL_TARGET;
 		scene_depth_texture = SDL_CreateGPUTexture(g_device, &info);
 	}
@@ -155,7 +155,7 @@ int main()
 		info.layer_count_or_depth = 1;
 		info.num_levels = 1;
 		info.sample_count = SDL_GPU_SAMPLECOUNT_1;
-		info.format = g_depth_texute_format;
+		info.format = g_depth_texture_format;
 		info.usage = SDL_GPU_TEXTUREUSAGE_SAMPLER | SDL_GPU_TEXTUREUSAGE_DEPTH_STENCIL_TARGET;
 		shadow_texture = SDL_CreateGPUTexture(g_device, &info);
 	}
@@ -892,7 +892,7 @@ func SDL_GPUGraphicsPipeline* create_pipeline(
 	pipeline_create_info.target_info.has_depth_stencil_target = has_depth;
 	pipeline_create_info.depth_stencil_state.enable_depth_test = has_depth;
 	pipeline_create_info.depth_stencil_state.enable_depth_write = has_depth;
-	pipeline_create_info.target_info.depth_stencil_format = g_depth_texute_format;
+	pipeline_create_info.target_info.depth_stencil_format = g_depth_texture_format;
 	pipeline_create_info.depth_stencil_state.compare_op = SDL_GPU_COMPAREOP_LESS;
 	pipeline_create_info.depth_stencil_state.write_mask = 0xFF;
 	SDL_GPUColorTargetDescription color_target_description = {
