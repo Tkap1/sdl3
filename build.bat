@@ -8,6 +8,8 @@ glslc.exe assets/screen.frag -o assets/screen.frag.spv
 glslc.exe assets/depth_only.vert -o assets/depth_only.vert.spv
 glslc.exe assets/depth_only.frag -o assets/depth_only.frag.spv
 
+mkdir build 2> NUL
+
 pushd build
 	cl ..\src\main.cpp -nologo -std:c++20 -Zc:strictStrings- -Od -Zi -W4 -wd 4505 -I..\src -link ..\SDL3.lib
 popd
