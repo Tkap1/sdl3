@@ -261,7 +261,11 @@ int main()
 			if(key_arr[SDL_SCANCODE_S]) {
 				dir += temp_front * -1;
 			}
-			player.pos += v3_normalized(dir) * delta * 50;
+			float speed = 30;
+			if(key_arr[SDL_SCANCODE_LSHIFT]) {
+				speed *= 10;
+			}
+			player.pos += v3_normalized(dir) * delta * speed;
 		}
 
 		if(generate_terrain) {
@@ -279,12 +283,12 @@ int main()
 					v3(1, 0, 0),
 					v3(1, 0, 1),
 				};
-				float scale_arr[c_biome_count] = {2, 8, 1, 1, 20, 30};
+				float scale_arr[c_biome_count] = {2, 8, 1, 1, 40, 60};
 				fnl_state noise_arr[c_biome_count + 1] = zero;
 				for(int i = 0; i < c_biome_count + 1; i += 1) {
 					noise_arr[i] = fnlCreateState();
-					// noise_arr[i].seed = (u32)__rdtsc();
-					noise_arr[i].seed = 1;
+					noise_arr[i].seed = (u32)__rdtsc();
+					// noise_arr[i].seed = 1;
 					noise_arr[i].noise_type = FNL_NOISE_OPENSIMPLEX2;
 				}
 				noise_arr[0].frequency = 0.1f;

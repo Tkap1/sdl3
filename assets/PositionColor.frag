@@ -21,34 +21,52 @@ void main()
 	// 		dFdy(v_world_pos)
 	// 	)
 	// ) * -1;
-	vec3 normal = v_normal;
-	vec3 light_dir = normalize(vec3(1, 1, -2));
+	vec3 normal = normalize(v_normal);
+	vec3 light_dir = normalize(vec3(1, 0, -0.1));
 	float m = dot(-light_dir, normal);
 	m = max(m, 0.0) * 0.5 + 0.5;
 	// m = max(m, 0.0);
-	vec3 color = v_color.rgb * m;
 	vec3 temp0 = v_light_frag_pos.xyz / v_light_frag_pos.w;
-	temp0 = temp0 * 0.5 + 0.5;
+	temp0.xy = temp0.xy * 0.5 + 0.5;
 	temp0.y = 1.0 - temp0.y;
+
+	// vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv		out of bounds start		vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv
 	if(temp0.x > 1 || temp0.x < 0 || temp0.y > 1 || temp0.y < 0) {
 		out_color = vec4(1, 0, 0, 1);
 		return;
 	}
+	// ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^		out of bounds end		^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
 	float closest_depth = texture(shadow_map, temp0.xy).r;
 	float curr_depth = temp0.z;
-	float shadow = (curr_depth > closest_depth) ? 1.0 : 0.0;
-	color *= 1.0 - shadow;
+	float bias = 0.003;
+	float shadow = (curr_depth > closest_depth + bias) ? 1.0 : 0.0;
+	float inv_shadow = 1.0 - shadow;
+
+	vec3 light_color = vec3(1, 1, 1);
+	float ambient_strength = 0.3;
+	float specular_strength = 0.5;
+
+	vec3 ambient = light_color * ambient_strength;
+	vec3 diffuse = light_color * m * inv_shadow;
+	vec3 specular = vec3(0);
+	{
+		vec3 view_dir = normalize(cam_pos - v_world_pos);
+		vec3 reflect_dir = reflect(light_dir, normal);
+		float spec = pow(max(dot(view_dir, reflect_dir), 0.0), 32);
+		specular = light_color * spec * specular_strength * inv_shadow;
+	}
+
+	vec3 color = vec3(0);
+	color = v_color.rgb * (ambient + diffuse);
+	color += specular;
 
 	// vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv		fog start		vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv
-	// vec3 fog_color = vec3(0.2, 0.2, 0.3);
-	// float cam_dist = distance(cam_pos, v_world_pos);
-	// float fog_dt = smoothstep(100, 250, cam_dist);
-	// color = mix(color, fog_color, fog_dt);
+	vec3 fog_color = vec3(0.2, 0.2, 0.3);
+	float cam_dist = distance(cam_pos, v_world_pos);
+	float fog_dt = smoothstep(200, 350, cam_dist);
+	color = mix(color, fog_color, fog_dt);
 	// ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^		fog end		^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-	// color = vec3(closest_depth);
-	color = vec3(curr_depth);
-	// color = vec3(temp0.x, temp0.y, 0.0);
-	// vec3 color = normal * 0.5 + 0.5;
 	out_color = vec4(color, v_color.a);
 }
