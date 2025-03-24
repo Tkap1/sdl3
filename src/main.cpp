@@ -54,8 +54,8 @@ int main()
 
 	// prefered depth texture format in order of preference
 	SDL_GPUTextureFormat prefered_depth_formats[] = {
-		SDL_GPU_TEXTUREFORMAT_D24_UNORM,
 		SDL_GPU_TEXTUREFORMAT_D32_FLOAT,
+		SDL_GPU_TEXTUREFORMAT_D24_UNORM,
 		SDL_GPU_TEXTUREFORMAT_D24_UNORM_S8_UINT,
 		SDL_GPU_TEXTUREFORMAT_D32_FLOAT_S8_UINT,
 	};
@@ -178,7 +178,6 @@ int main()
 	buffer_create_info.size = sizeof(s_vertex) * c_vertex_count;
 	VertexBuffer = SDL_CreateGPUBuffer(g_device, &buffer_create_info);
 
-	// s_v3 cam_pos = v3(10, -3, 50);
 	s_v3 cam_pos = player.pos;
 
 	SDL_SetWindowRelativeMouseMode(g_window, true);
@@ -457,12 +456,11 @@ int main()
 
 		if(swapchain_texture != null) {
 
-			float s = sinf(g_time) * 0;
-			s_v3 sun_pos = v3(0, c_tiles_y / 2, 10);
+			s_v3 sun_pos = v3(-1, c_tiles_y / 2, 10);
 			s_v3 sun_dir = v3_normalized(v3(1, 0, -0.1f));
 
 			s_m4 light_view = look_at(sun_pos, sun_pos + sun_dir, v3(0, 0, 1));
-			s_m4 light_projection = make_orthographic(-c_tiles_x, c_tiles_x, -100, 100, -c_tiles_y, c_tiles_y);
+			s_m4 light_projection = make_orthographic(-c_tiles_x * 0.6f, c_tiles_x * 0.6f, -100, 100, -c_tiles_y * 1.1f, c_tiles_y * 1.1f);
 
 			// vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv		scene to depth start		vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv
 			{
