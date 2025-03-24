@@ -25,19 +25,10 @@ void main()
 	vec3 light_dir = normalize(vec3(1, 0, -0.1));
 	float m = dot(-light_dir, normal);
 	m = max(m, 0.0) * 0.5 + 0.5;
-	// m = max(m, 0.0);
 	vec3 temp0 = v_light_frag_pos.xyz / v_light_frag_pos.w;
 	temp0.xy = temp0.xy * 0.5 + 0.5;
-	temp0.y = 1.0 - temp0.y;
 
-	// vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv		out of bounds start		vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv
-	if(temp0.x > 1 || temp0.x < 0 || temp0.y > 1 || temp0.y < 0) {
-		out_color = vec4(1, 0, 0, 1);
-		return;
-	}
-	// ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^		out of bounds end		^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-	float closest_depth = texture(shadow_map, temp0.xy).r;
+	float closest_depth = texture(shadow_map, vec2(temp0.x, 1 - temp0.y)).r;
 	float curr_depth = temp0.z;
 	float bias = 0.003;
 	float shadow = (curr_depth > closest_depth + bias) ? 1.0 : 0.0;
@@ -67,6 +58,20 @@ void main()
 	float fog_dt = smoothstep(200, 350, cam_dist);
 	color = mix(color, fog_color, fog_dt);
 	// ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^		fog end		^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+	// vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv		out of bounds start		vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv
+	#if 1
+	if(temp0.x < 0 || temp0.x > 1) {
+		color = vec3(0, 0, 1);
+	}
+	else if(temp0.y < 0 || temp0.y > 1) {
+		color = vec3(0, 0, 1);
+	}
+	else if(temp0.z < 0 || temp0.z > 1) {
+		color = vec3(0, 0, 1);
+	}
+	#endif
+	// ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^		out of bounds end		^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 	out_color = vec4(color, v_color.a);
 }
