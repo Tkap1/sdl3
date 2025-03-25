@@ -16,10 +16,21 @@ enum e_view_state
 	e_view_state_depth,
 };
 
-struct s_v3
+struct s_v2
 {
 	float x;
 	float y;
+};
+
+struct s_v3
+{
+	union {
+		struct {
+			float x;
+			float y;
+		};
+		s_v2 xy;
+	};
 	float z;
 };
 
@@ -33,9 +44,7 @@ struct s_v4
 
 struct s_vertex
 {
-	float x;
-	float y;
-	float z;
+	s_v3 pos;
 	s_v3 normal;
 	s_v3 color;
 	float a;
@@ -64,41 +73,17 @@ struct s_fragment_uniform_data
 
 struct s_player
 {
+	b8 on_ground;
 	s_v3 pos;
 	s_v3 vel;
 };
 
-func SDL_GPUShader* load_shader(
-	const char* shaderFilename,
-	Uint32 samplerCount,
-	Uint32 uniformBufferCount,
-	Uint32 storageBufferCount,
-	Uint32 storageTextureCount
-);
-func s_m4 m4_identity();
-func s_m4 m4_rotate(float angle, s_v3 axis);
-func s_v3 v3_normalized(s_v3 v);
-func float v3_length_squared(s_v3 v);
-func float v3_length(s_v3 v);
-func s_m4 make_perspective(float FOV, float AspectRatio, float Near, float Far);
-func constexpr s_v3 operator-(s_v3 a, s_v3 b);
-func s_v3 v3_cross(s_v3 a, s_v3 b);
-func float v3_dot(s_v3 a, s_v3 b);
-func s_m4 look_at(s_v3 eye, s_v3 target, s_v3 up);
-func float smoothstep(float edge0, float edge1, float x);
-func float lerp(float a, float b, float t);
-func float ilerp(float a, float b, float c);
-func float clamp(float curr, float min_val, float max_val);
-func float smoothstep2(float edge0, float edge1, float x);
-func s_v3 get_triangle_normal(s_v3 v1, s_v3 v2, s_v3 v3);
-func int roundfi(float x);
-func SDL_GPUGraphicsPipeline* create_pipeline(
-	SDL_GPUShader* vertex_shader, SDL_GPUShader* fragment_shader, SDL_GPUFillMode fill_mode, int num_color_targets,
-	SDL_GPUVertexElementFormat* element_format_arr, int element_format_count,
-	b8 has_depth
-);
-func s_m4 make_orthographic(float Left, float Right, float Bottom, float Top, float Near, float Far);
-func s_m4 make_orthographic_ai(float left, float right, float bottom, float top, float near, float far);
+struct s_shape
+{
+	s_v3 vertices[16];
+	int vertex_count;
+};
+
 
 template <typename T>
 func constexpr s_v3 v3(T v)
@@ -148,3 +133,41 @@ func void operator+=(s_v3& a, s_v3 b)
 	a.y += b.y;
 	a.z += b.z;
 }
+
+func SDL_GPUShader* load_shader(
+	const char* shaderFilename,
+	Uint32 samplerCount,
+	Uint32 uniformBufferCount,
+	Uint32 storageBufferCount,
+	Uint32 storageTextureCount
+);
+func s_m4 m4_identity();
+func s_m4 m4_rotate(float angle, s_v3 axis);
+func s_v3 v3_normalized(s_v3 v);
+func float v3_length_squared(s_v3 v);
+func float v3_length(s_v3 v);
+func s_m4 make_perspective(float FOV, float AspectRatio, float Near, float Far);
+func constexpr s_v3 operator-(s_v3 a, s_v3 b);
+func s_v3 v3_cross(s_v3 a, s_v3 b);
+func float v3_dot(s_v3 a, s_v3 b);
+func s_m4 look_at(s_v3 eye, s_v3 target, s_v3 up);
+func float smoothstep(float edge0, float edge1, float x);
+func float lerp(float a, float b, float t);
+func float ilerp(float a, float b, float c);
+func float clamp(float curr, float min_val, float max_val);
+func float smoothstep2(float edge0, float edge1, float x);
+func s_v3 get_triangle_normal(s_v3 v1, s_v3 v2, s_v3 v3);
+func int roundfi(float x);
+func SDL_GPUGraphicsPipeline* create_pipeline(
+	SDL_GPUShader* vertex_shader, SDL_GPUShader* fragment_shader, SDL_GPUFillMode fill_mode, int num_color_targets,
+	SDL_GPUVertexElementFormat* element_format_arr, int element_format_count,
+	b8 has_depth
+);
+func s_m4 make_orthographic(float Left, float Right, float Bottom, float Top, float Near, float Far);
+func s_m4 make_orthographic_ai(float left, float right, float bottom, float top, float near, float far);
+func b8 SATCollision3D(s_shape shapeA, s_shape shapeB);
+func float get_triangle_height_at_xy(s_v3 t1, s_v3 t2, s_v3 t3, s_v2 p);
+func float max(float a, float b);
+func float at_most(float a, float b);
+func float sign(float x);
+func s_v3 v3_set_mag(s_v3 v, float mag);

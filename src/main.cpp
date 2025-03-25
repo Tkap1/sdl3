@@ -63,7 +63,7 @@ int main()
 	for(int i = 0; i < array_count(prefered_depth_formats); i += 1) {
 		SDL_GPUTextureFormat format = prefered_depth_formats[i];
 		b8 is_supported = SDL_GPUTextureSupportsFormat(g_device, (SDL_GPUTextureFormat) format, SDL_GPU_TEXTURETYPE_2D, SDL_GPU_TEXTUREUSAGE_DEPTH_STENCIL_TARGET);
-		printf("texture format index: %i, value: %i is supported = %s\n", i, format, is_supported ? "true" : "false");
+		// printf("texture format index: %i, value: %i is supported = %s\n", i, format, is_supported ? "true" : "false");
 		if(is_supported) {
 			g_depth_texture_format = format;
 			break;
@@ -207,6 +207,7 @@ int main()
 		ticks_before = ticks;
 		SDL_Event event = zero;
 
+		b8 do_jump = false;
 		while(SDL_PollEvent(&event)) {
 			if(event.type == SDL_EVENT_QUIT) {
 				running = false;
@@ -219,7 +220,7 @@ int main()
 					generate_terrain = true;
 				}
 				else if(event.key.key == SDLK_SPACE) {
-					player.vel.z = 0.5f;
+					do_jump = true;
 				}
 				else if(event.key.key == SDLK_G) {
 					if(view_state == e_view_state_shadow_map) {
@@ -261,7 +262,8 @@ int main()
 		);
 		cam_up = v3_normalized(cam_up);
 
-
+		s_v3 player_wanted_dir = zero;
+		float player_wanted_speed = 5;
 		{
 			b8* key_arr = (b8*)SDL_GetKeyboardState(null);
 			s_v3 cam_side = v3_cross(cam_front, v3(0, 0, 1));
@@ -282,11 +284,10 @@ int main()
 			if(key_arr[SDL_SCANCODE_S]) {
 				dir += temp_front * -1;
 			}
-			float speed = 30;
 			if(key_arr[SDL_SCANCODE_LSHIFT]) {
-				speed *= 10;
+				player_wanted_speed *= 10;
 			}
-			player.pos += v3_normalized(dir) * delta * speed;
+			player_wanted_dir = v3_normalized(dir);
 		}
 
 		if(generate_terrain) {
@@ -385,14 +386,29 @@ int main()
 							height_scale_arr[i] = height_scale;
 							color_arr[i] = color;
 							z_arr[i] = height * height_scale;
+
+							// vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv		hardcoded terrain start		vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv
+							{
+								// float h = smoothstep2(30, 60, x_arr[i]) * 40;
+								// h += smoothstep2(100, 130, x_arr[i]) * 160;
+								// h += smoothstep2(200, 230, x_arr[i]) * 320;
+								// z_arr[i] = h;
+								// height_arr[i] = h;
+								// height_scale_arr[i] = 1;
+								// color_arr[i] = v3(
+								// 	(x + y) % 2 == 0 ? 0.5f : 0.3f
+								// );
+							}
+							// ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^		hardcoded terrain end		^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 						}
+
 
 						s_v3 normal_arr[2] = zero;
 						normal_arr[0] = get_triangle_normal(v3(x_arr[0], y_arr[0], z_arr[0]), v3(x_arr[1], y_arr[1], z_arr[1]), v3(x_arr[2], y_arr[2], z_arr[2]));
 						normal_arr[1] = get_triangle_normal(v3(x_arr[3], y_arr[3], z_arr[3]), v3(x_arr[4], y_arr[4], z_arr[4]), v3(x_arr[5], y_arr[5], z_arr[5]));
 
 						for(int i = 0; i < 6; i += 1) {
-							transfer_data[count++] = {x_arr[i], y_arr[i], height_arr[i] * height_scale_arr[i], normal_arr[i / 3], color_arr[i], 1};
+							transfer_data[count++] = {v3(x_arr[i], y_arr[i], height_arr[i] * height_scale_arr[i]), normal_arr[i / 3], color_arr[i], 1};
 						}
 					}
 				}
@@ -401,13 +417,13 @@ int main()
 				{
 					s_v3* sum_normal_arr = (s_v3*)calloc(1, sizeof(s_v3) * c_vertex_count);
 					for(int i = 0; i < c_vertex_count; i += 1) {
-						int x = roundfi(transfer_data[i].x);
-						int y = roundfi(transfer_data[i].y);
+						int x = roundfi(transfer_data[i].pos.x);
+						int y = roundfi(transfer_data[i].pos.y);
 						sum_normal_arr[x + y * c_tiles_x] += transfer_data[i].normal;
 					}
 					for(int i = 0; i < c_vertex_count; i += 1) {
-						int x = roundfi(transfer_data[i].x);
-						int y = roundfi(transfer_data[i].y);
+						int x = roundfi(transfer_data[i].pos.x);
+						int y = roundfi(transfer_data[i].pos.y);
 						transfer_data[i].normal = v3_normalized(sum_normal_arr[x + y * c_tiles_x]);
 					}
 					free(sum_normal_arr);
@@ -428,15 +444,82 @@ int main()
 
 		// vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv		update start		vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv
 		{
-			int x = (int)player.pos.x;
-			int y = (int)player.pos.y;
-			float ground = transfer_data[(x + y * c_tiles_x) * 6].z + 5;
-			player.vel.z -= delta;
-			player.pos.z += player.vel.z;
-			if(player.pos.z <= ground) {
-				player.pos.z = ground;
-				player.vel.z = 0;
+			{
+				s_v3 gravity = v3(0, 0, -1);
+				player.vel += gravity * delta * 1;
+
+				{
+					s_v3 temp = player.vel + player_wanted_dir * delta * player_wanted_speed;
+					temp.z = 0;
+					float l = v3_length(temp);
+					temp = v3_set_mag(temp, at_most(1.0f, l));
+					player.vel.xy = temp.xy;
+				}
+
+				if(do_jump)  {
+					player.vel.z = 0.5f;
+				}
+				player.pos += player.vel;
+				player.vel.x *= 0.9f;
+				player.vel.y *= 0.9f;
+
+				constexpr s_v3 c_player_size = v3(0.1f, 0.1f, 6.0f);
+				s_shape a = zero;
+				a.vertices[0] = v3(player.pos.x - c_player_size.x * 0.5f, player.pos.y + c_player_size.y * 0.5f, player.pos.z + c_player_size.z * 0.5f);
+				a.vertices[1] = v3(player.pos.x + c_player_size.x * 0.5f, player.pos.y + c_player_size.y * 0.5f, player.pos.z + c_player_size.z * 0.5f);
+				a.vertices[2] = v3(player.pos.x - c_player_size.x * 0.5f, player.pos.y - c_player_size.y * 0.5f, player.pos.z + c_player_size.z * 0.5f);
+				a.vertices[3] = v3(player.pos.x + c_player_size.x * 0.5f, player.pos.y - c_player_size.y * 0.5f, player.pos.z + c_player_size.z * 0.5f);
+				a.vertices[4] = v3(player.pos.x - c_player_size.x * 0.5f, player.pos.y + c_player_size.y * 0.5f, player.pos.z - c_player_size.z * 0.5f);
+				a.vertices[5] = v3(player.pos.x + c_player_size.x * 0.5f, player.pos.y + c_player_size.y * 0.5f, player.pos.z - c_player_size.z * 0.5f);
+				a.vertices[6] = v3(player.pos.x - c_player_size.x * 0.5f, player.pos.y - c_player_size.y * 0.5f, player.pos.z - c_player_size.z * 0.5f);
+				a.vertices[7] = v3(player.pos.x + c_player_size.x * 0.5f, player.pos.y - c_player_size.y * 0.5f, player.pos.z - c_player_size.z * 0.5f);
+				a.vertex_count = 8;
+
+				player.on_ground = false;
+
+				float highest_z = -1000000;
+				b8 collides = false;
+				float worst_dot = 1;
+				s_v3 worst_normal = zero;
+				int player_x = (int)player.pos.x;
+				int player_y = (int)player.pos.y;
+				for(int y = -1; y <= 1; y += 1) {
+					int yy = y + player_y;
+					for(int x = -1; x < 1; x += 1) {
+						int xx = x + player_x;
+						int index = (xx + yy * c_tiles_x) * 6;
+
+						for(int i = 0; i < 2; i += 1) {
+							s_shape b = zero;
+							b.vertices[0] = transfer_data[index + 3 * i + 0].pos;
+							b.vertices[1] = transfer_data[index + 3 * i + 1].pos;
+							b.vertices[2] = transfer_data[index + 3 * i + 2].pos;
+							b.vertex_count = 3;
+							if(SATCollision3D(a, b)) {
+								collides = true;
+								highest_z = max(highest_z, get_triangle_height_at_xy(b.vertices[0], b.vertices[1], b.vertices[2], player.pos.xy));
+								s_v3 triangle_normal = get_triangle_normal(b.vertices[0], b.vertices[1], b.vertices[2]);
+								if(triangle_normal.z > 0.0f) {
+									player.on_ground = true;
+								}
+								float d = v3_dot(v3(0, 0, 1), triangle_normal);
+								if(fabsf(1.0f - d) > fabsf(1.0f - worst_dot)) {
+									worst_dot = d;
+									worst_normal = triangle_normal;
+								}
+							}
+						}
+					}
+				}
+
+				if(collides) {
+					player.pos.z = highest_z + c_player_size.z * 0.5f;
+					if(player.on_ground) {
+						player.vel.z = 0;
+					}
+				}
 			}
+
 		}
 		cam_pos = player.pos;
 		// ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^		update end		^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -948,4 +1031,130 @@ func s_m4 make_orthographic(float Left, float Right, float Bottom, float Top, fl
 	Result.all2[3][2] = 0.5f * (Near + Far) / (Near - Far);
 
 	return (Result);
+}
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+func void getProjection(float* min, float* max, s_v3* vertices, int count, s_v3 axis) {
+		*min = *max = v3_dot(vertices[0], axis);
+		for (int i = 1; i < count; i++) {
+				float proj = v3_dot(vertices[i], axis);
+				if (proj < *min) *min = proj;
+				if (proj > *max) *max = proj;
+		}
+}
+
+func b8 overlap(float minA, float maxA, float minB, float maxB)
+{
+		return minA <= maxB && minB <= maxA;
+}
+
+func b8 SATCollision3D(s_shape shapeA, s_shape shapeB)
+{
+		// Test face normals of shapeA
+		for (int i = 0; i < shapeA.vertex_count - 2; i += 3) {
+			s_v3 v1 = shapeA.vertices[i + 1] - shapeA.vertices[i];
+			s_v3 v2 = shapeA.vertices[i + 2] - shapeA.vertices[i];
+			s_v3 axis = v3_cross(v1, v2);
+
+			float minA, maxA, minB, maxB;
+			getProjection(&minA, &maxA, shapeA.vertices, shapeA.vertex_count, axis);
+			getProjection(&minB, &maxB, shapeB.vertices, shapeB.vertex_count, axis);
+
+			if(!overlap(minA, maxA, minB, maxB)) {
+				return false;
+			}
+		}
+
+		// Test face normals of shapeB
+		for (int i = 0; i < shapeB.vertex_count - 2; i += 3) {
+				s_v3 v1 = shapeB.vertices[i + 1] - shapeB.vertices[i];
+				s_v3 v2 = shapeB.vertices[i + 2] - shapeB.vertices[i];
+				s_v3 axis = v3_cross(v1, v2);
+
+				float minA, maxA, minB, maxB;
+				getProjection(&minA, &maxA, shapeA.vertices, shapeA.vertex_count, axis);
+				getProjection(&minB, &maxB, shapeB.vertices, shapeB.vertex_count, axis);
+
+				if(!overlap(minA, maxA, minB, maxB)) {
+					return false;
+				}
+		}
+
+		// Test edge cross products
+		for (int i = 0; i < shapeA.vertex_count; i++) {
+			for (int j = 0; j < shapeB.vertex_count; j++) {
+				s_v3 edgeA = shapeA.vertices[(i + 1) % shapeA.vertex_count] - shapeA.vertices[i];
+				s_v3 edgeB = shapeB.vertices[(j + 1) % shapeB.vertex_count] - shapeB.vertices[j];
+				s_v3 axis = v3_cross(edgeA, edgeB);
+
+				float minA, maxA, minB, maxB;
+				getProjection(&minA, &maxA, shapeA.vertices, shapeA.vertex_count, axis);
+				getProjection(&minB, &maxB, shapeB.vertices, shapeB.vertex_count, axis);
+
+				if (!overlap(minA, maxA, minB, maxB)) {
+						return false;
+				}
+			}
+		}
+
+		return true;
+}
+
+func float get_triangle_height_at_xy(s_v3 t1, s_v3 t2, s_v3 t3, s_v2 p)
+{
+	// Calculate barycentric coordinates
+	// Area of the full triangle using cross product
+	float det = (t2.x - t1.x) * (t3.y - t1.y) - (t3.x - t1.x) * (t2.y - t1.y);
+
+	// Edge case: degenerate triangle (area is zero)
+	if (fabs(det) < 0.0001f) {
+			// Handle degenerate case - could return an error code or average z
+			return (t1.z + t2.z + t3.z) / 3.0f;
+	}
+
+	// Calculate barycentric coordinates
+	float lambda1 = ((t3.y - t1.y) * (p.x - t1.x) - (t3.x - t1.x) * (p.y - t1.y)) / det;
+	float lambda2 = ((t1.y - t2.y) * (p.x - t1.x) - (t1.x - t2.x) * (p.y - t1.y)) / det;
+	float lambda3 = 1.0f - lambda1 - lambda2;
+
+	// Check if point is inside triangle
+	if(lambda1 >= 0.0f && lambda2 >= 0.0f && lambda3 >= 0.0f) {
+			// Interpolate z value using barycentric coordinates
+			return lambda1 * t2.z + lambda2 * t3.z + lambda3 * t1.z;
+	}
+	else {
+			// Point is outside triangle
+			// Option 1: Return an error code (e.g., NaN or a special value)
+			// Option 2: Project onto triangle anyway (current implementation)
+			return lambda1 * t2.z + lambda2 * t3.z + lambda3 * t1.z;
+	}
+}
+
+func float max(float a, float b)
+{
+	float result = a >= b ? a : b;
+	return result;
+}
+
+func float at_most(float a, float b)
+{
+	float result = b >= a ? a : b;
+	return result;
+}
+
+func float sign(float x)
+{
+	float result = 1;
+	if(x < 0) {
+		result = -1;
+	}
+	return result;
+}
+
+func s_v3 v3_set_mag(s_v3 v, float mag)
+{
+	s_v3 result = v3_normalized(v);
+	result = result * mag;
+	return result;
 }

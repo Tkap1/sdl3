@@ -11,7 +11,7 @@ glslc.exe assets/depth_only.frag -o assets/depth_only.frag.spv
 mkdir build 2> NUL
 
 pushd build
-	cl ..\src\main.cpp -nologo -std:c++20 -Zc:strictStrings- -Od -Zi -W4 -wd 4505 -I..\src -link ..\SDL3.lib
+	cl ..\src\main.cpp -nologo -std:c++20 -Zc:strictStrings- -Od -Zi -W4 -wd 4505 -wd 4201 -I..\src -link ..\SDL3.lib
 popd
 
 copy build\main.exe main.exe > NUL
