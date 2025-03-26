@@ -1,4 +1,8 @@
 
+// to get slope dir
+// RayMarch: rotate normal, project player velocity onto that vector, then stretch it back to the speed (if this is about wall sliding)
+
+
 #include <stdlib.h>
 #include <stdio.h>
 #include "SDL3/SDL.h"
@@ -21,6 +25,7 @@ global SDL_GPUTexture* shadow_texture;
 global SDL_GPUSampler* shadow_texture_sampler;
 global b8 UseWireframeMode = false;
 global SDL_GPUBuffer* VertexBuffer;
+global SDL_GPUBuffer* VertexBuffer2;
 global SDL_GPUBuffer* circle_vertex_buffer;
 global constexpr int c_tiles_x = 512;
 global constexpr int c_tiles_y = 512;
@@ -32,7 +37,7 @@ global constexpr int c_window_width = 1920;
 global constexpr int c_window_height = 1080;
 global constexpr s_v2 c_window_size = {c_window_width, c_window_height};
 global constexpr s_v2 c_half_window_size = {c_window_width * 0.5f, c_window_height * 0.5f};
-global s_player player;
+global s_player g_player;
 global float cam_yaw;
 global float cam_pitch;
 global s_vertex* transfer_data;
@@ -44,14 +49,16 @@ global s_circle g_circle_arr[c_max_circles];
 global int g_circle_count = 0;
 global s_speed_buff g_speed_buff;
 global float g_last_speed_time = 0;
+global constexpr s_v3 c_player_size = v3(0.1f, 0.1f, 6.0f);
+global constexpr int c_max_mesh_instances = 1024;
 
 int main()
 {
 	SDL_Init(SDL_INIT_VIDEO);
 
-	player.pos.x = 10;
-	player.pos.y = 10;
-	player.pos.z = 20;
+	g_player.pos.x = 10;
+	g_player.pos.y = 10;
+	g_player.pos.z = 20;
 
 	g_device = SDL_CreateGPUDevice(
 		SDL_GPU_SHADERFORMAT_SPIRV,
@@ -105,31 +112,41 @@ int main()
 	SDL_GPUShader* circle_fragment_shader = load_shader("circle.frag", 0, 0, 0, 0);
 
 	{
-		SDL_GPUVertexElementFormat arr[3] = zero;
-		arr[0] = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3;
-		arr[1] = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3;
-		arr[2] = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4;
-		fill_pipeline = create_pipeline(vertexShader, fragmentShader, SDL_GPU_FILLMODE_FILL, 1, arr, array_count(arr), true, false);
-		line_pipeline = create_pipeline(vertexShader, fragmentShader, SDL_GPU_FILLMODE_LINE, 1, arr, array_count(arr), true, false);
+		s_list<SDL_GPUVertexElementFormat, 16> vertex_attributes;
+		vertex_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3);
+		vertex_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3);
+		vertex_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4);
+		s_list<SDL_GPUVertexElementFormat, 16> instance_attributes;
+		instance_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4);
+		instance_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4);
+		instance_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4);
+		instance_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4);
+		fill_pipeline = create_pipeline(vertexShader, fragmentShader, SDL_GPU_FILLMODE_FILL, 1, vertex_attributes, instance_attributes, true);
+		line_pipeline = create_pipeline(vertexShader, fragmentShader, SDL_GPU_FILLMODE_LINE, 1, vertex_attributes, instance_attributes, true);
 	}
-	screen_pipeline = create_pipeline(screen_vertex_shader, screen_fragment_shader, SDL_GPU_FILLMODE_FILL, 1, null, 0, false, false);
+	screen_pipeline = create_pipeline(screen_vertex_shader, screen_fragment_shader, SDL_GPU_FILLMODE_FILL, 1, zero, zero, false);
 
 	{
-		SDL_GPUVertexElementFormat arr[5] = zero;
-		arr[0] = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4;
-		arr[1] = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4;
-		arr[2] = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4;
-		arr[3] = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4;
-		arr[4] = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4;
-		circle_pipeline = create_pipeline(circle_vertex_shader, circle_fragment_shader, SDL_GPU_FILLMODE_FILL, 1, arr, array_count(arr), false, true);
+		s_list<SDL_GPUVertexElementFormat, 16> instance_attributes;
+		instance_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4);
+		instance_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4);
+		instance_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4);
+		instance_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4);
+		instance_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4);
+		circle_pipeline = create_pipeline(circle_vertex_shader, circle_fragment_shader, SDL_GPU_FILLMODE_FILL, 1, zero, instance_attributes, false);
 	}
 
 	{
-		SDL_GPUVertexElementFormat arr[3] = zero;
-		arr[0] = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3;
-		arr[1] = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3;
-		arr[2] = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4;
-		depth_only_pipeline = create_pipeline(depth_only_vertex_shader, depth_only_fragment_shader, SDL_GPU_FILLMODE_FILL, 0, arr, array_count(arr), true, false);
+		s_list<SDL_GPUVertexElementFormat, 16> vertex_attributes;
+		vertex_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3);
+		vertex_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3);
+		vertex_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4);
+		s_list<SDL_GPUVertexElementFormat, 16> instance_attributes;
+		instance_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4);
+		instance_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4);
+		instance_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4);
+		instance_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4);
+		depth_only_pipeline = create_pipeline(depth_only_vertex_shader, depth_only_fragment_shader, SDL_GPU_FILLMODE_FILL, 0, vertex_attributes, instance_attributes, true);
 	}
 
 	// Clean up shader resources
@@ -208,11 +225,18 @@ int main()
 	{
 		SDL_GPUBufferCreateInfo buffer_create_info = zero;
 		buffer_create_info.usage = SDL_GPU_BUFFERUSAGE_VERTEX;
+		buffer_create_info.size = sizeof(s_m4) * c_max_mesh_instances;
+		VertexBuffer2 = SDL_CreateGPUBuffer(g_device, &buffer_create_info);
+	}
+
+	{
+		SDL_GPUBufferCreateInfo buffer_create_info = zero;
+		buffer_create_info.usage = SDL_GPU_BUFFERUSAGE_VERTEX;
 		buffer_create_info.size = sizeof(s_circle) * c_max_circles;
 		circle_vertex_buffer = SDL_CreateGPUBuffer(g_device, &buffer_create_info);
 	}
 
-	s_v3 cam_pos = player.pos;
+	s_v3 cam_pos = g_player.pos;
 
 	SDL_SetWindowRelativeMouseMode(g_window, true);
 
@@ -230,6 +254,14 @@ int main()
 		transfer_create_info.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD;
 		transfer_create_info.size = sizeof(s_circle) * c_max_circles;
 		circle_transfer_buffer = SDL_CreateGPUTransferBuffer(g_device, &transfer_create_info);
+	}
+
+	SDL_GPUTransferBuffer* transfer_buffer2 = null;
+	{
+		SDL_GPUTransferBufferCreateInfo transfer_create_info = zero;
+		transfer_create_info.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD;
+		transfer_create_info.size = sizeof(s_m4) * c_max_mesh_instances;
+		transfer_buffer2 = SDL_CreateGPUTransferBuffer(g_device, &transfer_create_info);
 	}
 
 	SDL_GPUTransferBufferLocation location = zero;
@@ -264,7 +296,7 @@ int main()
 					generate_terrain = true;
 				}
 				else if(event.key.key == SDLK_SPACE) {
-					player.want_to_jump_timestamp = g_time;
+					g_player.want_to_jump_timestamp = g_time;
 				}
 				else if(event.key.key == SDLK_G) {
 					if(view_state == e_view_state_shadow_map) {
@@ -307,7 +339,7 @@ int main()
 		cam_up = v3_normalized(cam_up);
 
 		s_v3 player_wanted_dir = zero;
-		float player_wanted_speed = 0.01f;
+		float player_wanted_speed = 0.1f;
 		{
 			b8* key_arr = (b8*)SDL_GetKeyboardState(null);
 			s_v3 cam_side = v3_cross(cam_front, v3(0, 0, 1));
@@ -441,7 +473,8 @@ int main()
 								// float h = smoothstep2(30, 60, x_arr[i]) * 40;
 								// h += smoothstep2(100, 130, x_arr[i]) * 160;
 								// h += smoothstep2(200, 230, x_arr[i]) * 320;
-								// h = 0;
+								// // h = roundf(sinf(x_arr[i] * 0.1f)) * 10;
+
 								// z_arr[i] = h;
 								// height_arr[i] = h;
 								// height_scale_arr[i] = 1;
@@ -458,7 +491,8 @@ int main()
 						normal_arr[1] = get_triangle_normal(v3(x_arr[3], y_arr[3], z_arr[3]), v3(x_arr[4], y_arr[4], z_arr[4]), v3(x_arr[5], y_arr[5], z_arr[5]));
 
 						for(int i = 0; i < 6; i += 1) {
-							transfer_data[count++] = {v3(x_arr[i], y_arr[i], height_arr[i] * height_scale_arr[i]), normal_arr[i / 3], color_arr[i], 1};
+							transfer_data[count] = {v3(x_arr[i], y_arr[i], height_arr[i] * height_scale_arr[i]), normal_arr[i / 3], color_arr[i], 1};
+							count += 1;
 						}
 					}
 				}
@@ -506,106 +540,113 @@ int main()
 
 			{
 				s_v3 gravity = v3(0, 0, -0.006);
-				player.vel += gravity;
+				g_player.vel += gravity;
 
-				{
-					constexpr float c_max_input_mag = 0.25f;
-					s_v3 wanted = player_wanted_dir * player_wanted_speed;
-					float wanted_length = v3_length(wanted);
-					s_v3 curr = v3(player.vel.x, player.vel.y, 0);
-					float curr_length = v3_length(curr);
-					s_v3 combined = curr + wanted;
-					float combined_length = v3_length(combined);
-					// float can0 = max(0.0f, c_max_input_mag - curr_length);
-					if(combined_length <= curr_length) {
-						player.vel.x += wanted.x;
-						player.vel.y += wanted.y;
-					}
-					else {
-						float can1 = clamp(c_max_input_mag - combined_length, 0.0f, wanted_length);
-						s_v3 temp3 = v3_set_mag(wanted, can1);
-						player.vel.x += temp3.x;
-						player.vel.y += temp3.y;
-					}
+				// {
+				// 	constexpr float c_max_input_mag = 0.25f;
+				// 	s_v3 wanted = player_wanted_dir * player_wanted_speed;
+				// 	float wanted_length = v3_length(wanted);
+				// 	s_v3 curr = v3(g_player.vel.x, g_player.vel.y, 0);
+				// 	float curr_length = v3_length(curr);
+				// 	s_v3 combined = curr + wanted;
+				// 	float combined_length = v3_length(combined);
+				// 	// float can0 = max(0.0f, c_max_input_mag - curr_length);
+				// 	if(combined_length <= curr_length) {
+				// 		g_player.vel.x += wanted.x;
+				// 		g_player.vel.y += wanted.y;
+				// 	}
+				// 	else {
+				// 		float can1 = clamp(c_max_input_mag - combined_length, 0.0f, wanted_length);
+				// 		s_v3 temp3 = v3_set_mag(wanted, can1);
+				// 		g_player.vel.x += temp3.x;
+				// 		g_player.vel.y += temp3.y;
+				// 	}
 
-					// float input_mag = v3_length(temp);
-					// float player_curr_mag = v3_length(v3(player.vel.x, player.vel.y, 0.0f));
-					// float max_mag_from_input = clamp(0.15f - player_curr_mag, 0.0f, input_mag);
-					// temp = v3_set_mag(temp, max_mag_from_input);
-					// // printf("%f, %f\n", temp.x, temp.y);
-					// // printf("%f\n", max_mag_from_input);
-					// player.vel.x += temp.x;
-					// player.vel.y += temp.y;
+				// 	// float input_mag = v3_length(temp);
+				// 	// float player_curr_mag = v3_length(v3(player.vel.x, player.vel.y, 0.0f));
+				// 	// float max_mag_from_input = clamp(0.15f - player_curr_mag, 0.0f, input_mag);
+				// 	// temp = v3_set_mag(temp, max_mag_from_input);
+				// 	// // printf("%f, %f\n", temp.x, temp.y);
+				// 	// // printf("%f\n", max_mag_from_input);
+				// 	// player.vel.x += temp.x;
+				// 	// player.vel.y += temp.y;
+				// }
+
+				if(g_time - g_player.want_to_jump_timestamp < 0.1f) {
+					g_player.vel.z = 0.5f;
 				}
+				// g_player.pos += g_player.vel;
+				// if(g_player.on_ground) {
+				// 	g_player.vel.x *= 0.75f;
+				// 	g_player.vel.y *= 0.75f;
+				// }
 
-				if(g_time - player.want_to_jump_timestamp < 0.1f && player.on_ground)  {
-					player.vel.z = 0.5f;
-				}
-				player.pos += player.vel;
-				if(player.on_ground) {
-					player.vel.x *= 0.75f;
-					player.vel.y *= 0.75f;
-				}
+				s_v3 movement = g_player.vel + player_wanted_dir * player_wanted_speed;
+				// printf("%f, %f, %f\n", movement.x, movement.y, movement.z);
+				// g_player.pos += movement;
 
-				constexpr s_v3 c_player_size = v3(0.1f, 0.1f, 6.0f);
-				s_shape a = zero;
-				a.vertices[0] = v3(player.pos.x - c_player_size.x * 0.5f, player.pos.y + c_player_size.y * 0.5f, player.pos.z + c_player_size.z * 0.5f);
-				a.vertices[1] = v3(player.pos.x + c_player_size.x * 0.5f, player.pos.y + c_player_size.y * 0.5f, player.pos.z + c_player_size.z * 0.5f);
-				a.vertices[2] = v3(player.pos.x - c_player_size.x * 0.5f, player.pos.y - c_player_size.y * 0.5f, player.pos.z + c_player_size.z * 0.5f);
-				a.vertices[3] = v3(player.pos.x + c_player_size.x * 0.5f, player.pos.y - c_player_size.y * 0.5f, player.pos.z + c_player_size.z * 0.5f);
-				a.vertices[4] = v3(player.pos.x - c_player_size.x * 0.5f, player.pos.y + c_player_size.y * 0.5f, player.pos.z - c_player_size.z * 0.5f);
-				a.vertices[5] = v3(player.pos.x + c_player_size.x * 0.5f, player.pos.y + c_player_size.y * 0.5f, player.pos.z - c_player_size.z * 0.5f);
-				a.vertices[6] = v3(player.pos.x - c_player_size.x * 0.5f, player.pos.y - c_player_size.y * 0.5f, player.pos.z - c_player_size.z * 0.5f);
-				a.vertices[7] = v3(player.pos.x + c_player_size.x * 0.5f, player.pos.y - c_player_size.y * 0.5f, player.pos.z - c_player_size.z * 0.5f);
-				a.vertex_count = 8;
+				// s_collision_data collision_data = check_collision(g_player);
+				// g_player.pos -= movement;
+				s_v3 new_vel = g_player.vel;
+				b8 z_modified = false;
+				for(int i = 0; i < 3; i += 1) {
+					constexpr int c_steps = 100;
+					s_v3 temp_movement = zero;
+					if(i == 0) { temp_movement.x = movement.x; }
+					else if(i == 1) { temp_movement.y = movement.y; }
+					else if(i == 2) { temp_movement.z = movement.z; }
+					s_v3 small_movement = temp_movement / c_steps;
+					for(int j = 0; j < c_steps; j += 1) {
+						g_player.pos += small_movement;
+						s_collision_data temp_collision_data = check_collision(g_player);
+						if(temp_collision_data.collides) {
+							s_v3 normal = get_triangle_normal(temp_collision_data.vertices[0], temp_collision_data.vertices[1], temp_collision_data.vertices[2]);
+							g_player.pos -= small_movement;
+							if(i == 0) {
+								float dot = v3_dot(v3(0, 0, 1), normal);
+								dot = clamp(dot, 0.0f, 1.0f);
+								b8 is_slope = dot > 0.2f;
+								if(is_slope) {
+									// s_v3 reflect = v3_reflect(movement, normal) * 10;
+									s_v3 n = v3(normal.x * -1, normal.y * -1, normal.z);
+									s_v3 reflect = n;
+									// reflect.x = 0;
+									// reflect.y = 0;
+									new_vel = reflect * (1 - dot);
+									z_modified = true;
+									// printf("vel: %f, %f, %f\n", movement.x, movement.y, movement.z);
+									// printf("reflect: %f, %f, %f\n", reflect.x, reflect.y, reflect.z);
 
-				player.on_ground = false;
-
-				float highest_z = -1000000;
-				b8 collides = false;
-				float worst_dot = 1;
-				s_v3 worst_normal = zero;
-				int player_x = floorfi(player.pos.x / c_tile_size);
-				int player_y = floorfi(player.pos.y / c_tile_size);
-				for(int y = -1; y <= 1; y += 1) {
-					int yy = y + player_y;
-					for(int x = -1; x < 1; x += 1) {
-						int xx = x + player_x;
-						int index = (xx + yy * c_tiles_x) * 6;
-
-						for(int i = 0; i < 2; i += 1) {
-							s_shape b = zero;
-							b.vertices[0] = transfer_data[index + 3 * i + 0].pos;
-							b.vertices[1] = transfer_data[index + 3 * i + 1].pos;
-							b.vertices[2] = transfer_data[index + 3 * i + 2].pos;
-							b.vertex_count = 3;
-							if(SATCollision3D(a, b)) {
-								collides = true;
-								highest_z = max(highest_z, get_triangle_height_at_xy(b.vertices[0], b.vertices[1], b.vertices[2], player.pos.xy));
-								s_v3 triangle_normal = get_triangle_normal(b.vertices[0], b.vertices[1], b.vertices[2]);
-								if(triangle_normal.z > 0.0f) {
-									player.on_ground = true;
-								}
-								float d = v3_dot(v3(0, 0, 1), triangle_normal);
-								if(fabsf(1.0f - d) > fabsf(1.0f - worst_dot)) {
-									worst_dot = d;
-									worst_normal = triangle_normal;
 								}
 							}
+							if(i == 2) {
+								if(!z_modified) {
+									new_vel.z = 0;
+								}
+							}
+							break;
 						}
 					}
 				}
+				g_player.vel = new_vel;
+				g_player.vel.x *= 0.8f;
+				g_player.vel.y *= 0.8f;
 
-				if(collides) {
-					player.pos.z = highest_z + c_player_size.z * 0.5f;
-					if(player.on_ground) {
-						player.vel.z = 0;
-					}
-				}
+				// if(collision_data.collides) {
+				// 	float highest_z = get_triangle_height_at_xy(collision_data.vertices[0], collision_data.vertices[1], collision_data.vertices[2], g_player.pos.xy);
+				// 	g_player.pos.z = highest_z + c_player_size.z * 0.5f;
+				// 	s_v3 normal = get_triangle_normal(collision_data.vertices[0], collision_data.vertices[1], collision_data.vertices[2]);
+				// 	if(normal.z > 0.0f) {
+				// 		g_player.on_ground = true;
+				// 	}
+				// 	if(g_player.on_ground) {
+				// 		g_player.vel.z = 0;
+				// 	}
+				// }
 			}
 
 		}
-		cam_pos = player.pos;
+		cam_pos = g_player.pos;
 		// ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^		update end		^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 		// vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv		draw start		vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv
@@ -645,13 +686,15 @@ int main()
 				SDL_GPURenderPass* render_pass = SDL_BeginGPURenderPass(cmdbuf, null, 0, &depth_stencil_target_info);
 				SDL_BindGPUGraphicsPipeline(render_pass, depth_only_pipeline);
 				{
-					SDL_GPUBufferBinding binding = zero;
-					binding.buffer = VertexBuffer;
-					SDL_BindGPUVertexBuffers(render_pass, 0, &binding, 1);
+					s_m4 data = m4_identity();
+					upload_to_gpu_buffer(&data, sizeof(data), VertexBuffer2, transfer_buffer2);
+					SDL_GPUBufferBinding binding_arr[2] = zero;
+					binding_arr[0].buffer = VertexBuffer;
+					binding_arr[1].buffer = VertexBuffer2;
+					SDL_BindGPUVertexBuffers(render_pass, 0, binding_arr, 2);
 				}
 				{
 					s_vertex_uniform_data0 data = zero;
-					data.model = m4_identity();
 					data.view = light_view;
 					data.projection = light_projection;
 					SDL_PushGPUVertexUniformData(cmdbuf, 0, &data, sizeof(data));
@@ -707,7 +750,7 @@ int main()
 					depth_stencil_target_info.stencil_store_op = SDL_GPU_STOREOP_DONT_CARE;
 
 					SDL_GPURenderPass* render_pass = SDL_BeginGPURenderPass(cmdbuf, &color_target_info, 1, &depth_stencil_target_info);
-					SDL_BindGPUGraphicsPipeline(render_pass, fill_pipeline);
+					SDL_BindGPUGraphicsPipeline(render_pass, UseWireframeMode ? line_pipeline : fill_pipeline);
 					{
 						SDL_GPUBufferBinding binding = zero;
 						binding.buffer = VertexBuffer;
@@ -715,7 +758,6 @@ int main()
 					}
 					{
 						s_vertex_uniform_data1 data = zero;
-						data.model = m4_identity();
 						if(view_state == e_view_state_shadow_map) {
 							data.view = light_view;
 							data.projection = light_projection;
@@ -752,12 +794,12 @@ int main()
 					if(!g_speed_buff.hit_arr[0] && g_speed_buff.active) {
 						s_v2 pos = c_half_window_size;
 						pos.x += c_half_window_size.x * yaw_diff[0];
-						draw_circle(pos, 200, make_color(1, 0, 0));
+						// draw_circle(pos, 200, make_color(1, 0, 0));
 					}
 					if(!g_speed_buff.hit_arr[1] && g_speed_buff.active) {
 						s_v2 pos = c_half_window_size;
 						pos.x -= c_half_window_size.x * yaw_diff[1];
-						draw_circle(pos, 200, make_color(0, 1, 0));
+						// draw_circle(pos, 200, make_color(0, 1, 0));
 					}
 					if(yaw_diff[0] <= 0.1f) {
 						g_speed_buff.hit_arr[0] = true;
@@ -769,8 +811,8 @@ int main()
 					if(apply_buff) {
 						g_speed_buff.active = false;
 						g_last_speed_time = g_time;
-						player.vel.x *= 2;
-						player.vel.y *= 2;
+						g_player.vel.x *= 2;
+						g_player.vel.y *= 2;
 						// printf("%f, %f\n", player.vel.x, player.vel.y);
 					}
 				}
@@ -791,7 +833,7 @@ int main()
 						SDL_BindGPUVertexBuffers(render_pass, 0, &binding, 1);
 					}
 					{
-						s_vertex_uniform_data2 data = zero;
+						s_vertex_uniform_data0 data = zero;
 						data.view = m4_identity();
 						data.projection = make_orthographic(0, c_window_width, c_window_height, 0, 0, 1);
 						SDL_PushGPUVertexUniformData(cmdbuf, 0, &data, sizeof(data));
@@ -814,7 +856,7 @@ int main()
 
 func SDL_GPUShader* load_shader(
 	const char* shaderFilename,
-	Uint32 samplerCount,
+	Uint32 sampler_count,
 	Uint32 uniformBufferCount,
 	Uint32 storageBufferCount,
 	Uint32 storageTextureCount
@@ -861,7 +903,7 @@ func SDL_GPUShader* load_shader(
 	shaderInfo.entrypoint = entrypoint;
 	shaderInfo.format = format;
 	shaderInfo.stage = stage;
-	shaderInfo.num_samplers = samplerCount;
+	shaderInfo.num_samplers = sampler_count;
 	shaderInfo.num_uniform_buffers = uniformBufferCount;
 	shaderInfo.num_storage_buffers = storageBufferCount;
 	shaderInfo.num_storage_textures = storageTextureCount;
@@ -1075,8 +1117,8 @@ func int floorfi(float x)
 
 func SDL_GPUGraphicsPipeline* create_pipeline(
 	SDL_GPUShader* vertex_shader, SDL_GPUShader* fragment_shader, SDL_GPUFillMode fill_mode, int num_color_targets,
-	SDL_GPUVertexElementFormat* element_format_arr, int element_format_count,
-	b8 has_depth, b8 support_instancing
+	s_list<SDL_GPUVertexElementFormat, 16> vertex_attributes, s_list<SDL_GPUVertexElementFormat, 16> instance_attributes,
+	b8 has_depth
 )
 {
 	SDL_GPUGraphicsPipelineCreateInfo pipeline_create_info = zero;
@@ -1103,35 +1145,50 @@ func SDL_GPUGraphicsPipeline* create_pipeline(
 
 	color_target_description.blend_state.enable_blend = true;
 	pipeline_create_info.target_info.color_target_descriptions = num_color_targets > 0 ? &color_target_description : null;
-	pipeline_create_info.vertex_input_state.num_vertex_buffers = element_format_count > 0 ? 1 : 0;
-	SDL_GPUVertexBufferDescription gpu_vertex_buffer_description = zero;
-	if(support_instancing) {
-		gpu_vertex_buffer_description.input_rate = SDL_GPU_VERTEXINPUTRATE_INSTANCE;
+	{
+		int count = 0;
+		if(vertex_attributes.count > 0) { count += 1; }
+		if(instance_attributes.count > 0) { count += 1; }
+		pipeline_create_info.vertex_input_state.num_vertex_buffers = count;
 	}
-	else {
-		gpu_vertex_buffer_description.input_rate = SDL_GPU_VERTEXINPUTRATE_VERTEX;
-	}
+	SDL_GPUVertexBufferDescription gpu_vertex_buffer_description_arr[2] = zero;
+	gpu_vertex_buffer_description_arr[0].input_rate = SDL_GPU_VERTEXINPUTRATE_VERTEX;
+	gpu_vertex_buffer_description_arr[1].input_rate = SDL_GPU_VERTEXINPUTRATE_INSTANCE;
+	gpu_vertex_buffer_description_arr[0].slot = 0;
+	gpu_vertex_buffer_description_arr[1].slot = 1;
 
-	int pitch = 0;
+	int attribute_count = 0;
+	s_list<SDL_GPUVertexElementFormat, 16>* temp[2] = {&vertex_attributes, &instance_attributes};
 	SDL_GPUVertexAttribute vertex_attribute_arr[16] = zero;
-	for(int i = 0; i < element_format_count; i += 1) {
-		vertex_attribute_arr[i].format = element_format_arr[i];
-		vertex_attribute_arr[i].location = i;
-		vertex_attribute_arr[i].offset = pitch;
+	int buffer_count = 0;
+	for(int i = 0; i < 2; i += 1) {
+		int pitch = 0;
+		int count = temp[i]->count;
+		for(int j = 0; j < count; j += 1) {
+			vertex_attribute_arr[attribute_count].format = temp[i]->data[j];
+			vertex_attribute_arr[attribute_count].location = attribute_count;
+			vertex_attribute_arr[attribute_count].offset = pitch;
+			vertex_attribute_arr[attribute_count].buffer_slot = buffer_count;
 
-		switch(element_format_arr[i]) {
-			case SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3: {
-				pitch += sizeof(float) * 3;
-			} break;
-			case SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4: {
-				pitch += sizeof(float) * 4;
-			} break;
-			invalid_default_case;
+			switch(temp[i]->data[j]) {
+				case SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3: {
+					pitch += sizeof(float) * 3;
+				} break;
+				case SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4: {
+					pitch += sizeof(float) * 4;
+				} break;
+				invalid_default_case;
+			}
+			attribute_count += 1;
 		}
+		if(count > 0) {
+			buffer_count += 1;
+		}
+		gpu_vertex_buffer_description_arr[i].pitch = pitch;
 	}
-	gpu_vertex_buffer_description.pitch = pitch;
-	pipeline_create_info.vertex_input_state.vertex_buffer_descriptions = &gpu_vertex_buffer_description;
-	pipeline_create_info.vertex_input_state.num_vertex_attributes = element_format_count;
+
+	pipeline_create_info.vertex_input_state.vertex_buffer_descriptions = gpu_vertex_buffer_description_arr;
+	pipeline_create_info.vertex_input_state.num_vertex_attributes = attribute_count;
 	pipeline_create_info.vertex_input_state.vertex_attributes = vertex_attribute_arr;
 
 	pipeline_create_info.rasterizer_state.fill_mode = fill_mode;
@@ -1166,7 +1223,7 @@ func s_m4 make_orthographic(float Left, float Right, float Bottom, float Top, fl
 
 func void getProjection(float* min, float* max, s_v3* vertices, int count, s_v3 axis) {
 		*min = *max = v3_dot(vertices[0], axis);
-		for (int i = 1; i < count; i++) {
+		for (int i = 1; i < count; i += 1) {
 				float proj = v3_dot(vertices[i], axis);
 				if (proj < *min) *min = proj;
 				if (proj > *max) *max = proj;
@@ -1211,8 +1268,8 @@ func b8 SATCollision3D(s_shape shapeA, s_shape shapeB)
 		}
 
 		// Test edge cross products
-		for (int i = 0; i < shapeA.vertex_count; i++) {
-			for (int j = 0; j < shapeB.vertex_count; j++) {
+		for (int i = 0; i < shapeA.vertex_count; i += 1) {
+			for (int j = 0; j < shapeB.vertex_count; j += 1) {
 				s_v3 edgeA = shapeA.vertices[(i + 1) % shapeA.vertex_count] - shapeA.vertices[i];
 				s_v3 edgeB = shapeB.vertices[(j + 1) % shapeB.vertex_count] - shapeB.vertices[j];
 				s_v3 axis = v3_cross(edgeA, edgeB);
@@ -1392,3 +1449,74 @@ func void draw_circle(s_v2 pos, float radius, s_v4 color)
 	g_circle_arr[g_circle_count] = circle;
 	g_circle_count += 1;
 }
+
+func s_v3 v3_reflect(s_v3 a, s_v3 b)
+{
+	float dot = v3_dot(a, b) * 2;
+	s_v3 result;
+	result.x = a.x - b.x * dot;
+	result.y = a.y - b.y * dot;
+	result.z = a.z - b.z * dot;
+	return result;
+}
+
+func s_collision_data check_collision(s_player player)
+{
+	s_collision_data result = zero;
+	s_shape a = zero;
+	a.vertices[0] = v3(player.pos.x - c_player_size.x * 0.5f, player.pos.y + c_player_size.y * 0.5f, player.pos.z + c_player_size.z * 0.5f);
+	a.vertices[1] = v3(player.pos.x + c_player_size.x * 0.5f, player.pos.y + c_player_size.y * 0.5f, player.pos.z + c_player_size.z * 0.5f);
+	a.vertices[2] = v3(player.pos.x - c_player_size.x * 0.5f, player.pos.y - c_player_size.y * 0.5f, player.pos.z + c_player_size.z * 0.5f);
+	a.vertices[3] = v3(player.pos.x + c_player_size.x * 0.5f, player.pos.y - c_player_size.y * 0.5f, player.pos.z + c_player_size.z * 0.5f);
+	a.vertices[4] = v3(player.pos.x - c_player_size.x * 0.5f, player.pos.y + c_player_size.y * 0.5f, player.pos.z - c_player_size.z * 0.5f);
+	a.vertices[5] = v3(player.pos.x + c_player_size.x * 0.5f, player.pos.y + c_player_size.y * 0.5f, player.pos.z - c_player_size.z * 0.5f);
+	a.vertices[6] = v3(player.pos.x - c_player_size.x * 0.5f, player.pos.y - c_player_size.y * 0.5f, player.pos.z - c_player_size.z * 0.5f);
+	a.vertices[7] = v3(player.pos.x + c_player_size.x * 0.5f, player.pos.y - c_player_size.y * 0.5f, player.pos.z - c_player_size.z * 0.5f);
+	a.vertex_count = 8;
+
+	int player_x = floorfi(player.pos.x / c_tile_size);
+	int player_y = floorfi(player.pos.y / c_tile_size);
+	for(int y = -1; y <= 1; y += 1) {
+		int yy = y + player_y;
+		for(int x = -1; x < 1; x += 1) {
+			int xx = x + player_x;
+			int index = (xx + yy * c_tiles_x) * 6;
+
+			for(int i = 0; i < 2; i += 1) {
+				s_shape b = zero;
+				b.vertices[0] = transfer_data[index + 3 * i + 0].pos;
+				b.vertices[1] = transfer_data[index + 3 * i + 1].pos;
+				b.vertices[2] = transfer_data[index + 3 * i + 2].pos;
+				b.vertex_count = 3;
+				if(SATCollision3D(a, b)) {
+					result.collides = true;
+					result.vertices[0] = b.vertices[0];
+					result.vertices[1] = b.vertices[1];
+					result.vertices[2] = b.vertices[2];
+					goto end;
+				}
+			}
+		}
+	}
+	end:
+	return result;
+}
+
+template <typename t, int n>
+t& s_list<t, n>::operator[](int index)
+{
+	assert(index >= 0);
+	assert(index < this->count);
+	return this->data[index];
+}
+
+template <typename t, int n>
+t* s_list<t, n>::add(t new_element)
+{
+	assert(count < n);
+	t* result = &this->data[this->count];
+	this->data[this->count] = new_element;
+	this->count += 1;
+	return result;
+}
+

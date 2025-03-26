@@ -50,6 +50,21 @@ struct s_vertex
 	float a;
 };
 
+struct s_sphere
+{
+	s_v3 pos;
+	s_v3 vel;
+};
+
+template <typename t, int n>
+struct s_list
+{
+	int count = 0;
+	t data[n];
+	t& operator[](int index);
+	t* add(t new_element);
+};
+
 struct s_circle
 {
 	s_m4 model;
@@ -58,24 +73,16 @@ struct s_circle
 
 struct s_vertex_uniform_data0
 {
-	s_m4 model;
 	s_m4 view;
 	s_m4 projection;
 };
 
 struct s_vertex_uniform_data1
 {
-	s_m4 model;
 	s_m4 view;
 	s_m4 projection;
 	s_m4 light_view;
 	s_m4 light_projection;
-};
-
-struct s_vertex_uniform_data2
-{
-	s_m4 view;
-	s_m4 projection;
 };
 
 
@@ -96,6 +103,12 @@ struct s_shape
 {
 	s_v3 vertices[16];
 	int vertex_count;
+};
+
+struct s_collision_data
+{
+	b8 collides;
+	s_v3 vertices[3];
 };
 
 struct s_speed_buff
@@ -155,11 +168,27 @@ func constexpr s_v3 operator*(s_v3 a, float b)
 	);
 }
 
+func constexpr s_v3 operator/(s_v3 a, float b)
+{
+	return v3(
+		a.x / b,
+		a.y / b,
+		a.z / b
+	);
+}
+
 func void operator+=(s_v3& a, s_v3 b)
 {
 	a.x += b.x;
 	a.y += b.y;
 	a.z += b.z;
+}
+
+func void operator-=(s_v3& a, s_v3 b)
+{
+	a.x -= b.x;
+	a.y -= b.y;
+	a.z -= b.z;
 }
 
 func SDL_GPUShader* load_shader(
@@ -188,8 +217,8 @@ func s_v3 get_triangle_normal(s_v3 v1, s_v3 v2, s_v3 v3);
 func int roundfi(float x);
 func SDL_GPUGraphicsPipeline* create_pipeline(
 	SDL_GPUShader* vertex_shader, SDL_GPUShader* fragment_shader, SDL_GPUFillMode fill_mode, int num_color_targets,
-	SDL_GPUVertexElementFormat* element_format_arr, int element_format_count,
-	b8 has_depth, b8 support_instancing
+	s_list<SDL_GPUVertexElementFormat, 16> vertex_attributes, s_list<SDL_GPUVertexElementFormat, 16> instance_attributes,
+	b8 has_depth
 );
 func s_m4 make_orthographic(float Left, float Right, float Bottom, float Top, float Near, float Far);
 func b8 SATCollision3D(s_shape shapeA, s_shape shapeB);
@@ -208,3 +237,5 @@ func s_v4 make_color(float r, float g, float b);
 func s_v4 make_color(float r, float a);
 func float min(float a, float b);
 func int floorfi(float x);
+func s_v3 v3_reflect(s_v3 a, s_v3 b);
+func s_collision_data check_collision(s_player player);
