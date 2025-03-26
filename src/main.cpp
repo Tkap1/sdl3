@@ -25,10 +25,11 @@ global SDL_GPUBuffer* circle_vertex_buffer;
 global constexpr int c_tiles_x = 512;
 global constexpr int c_tiles_y = 512;
 global constexpr int c_vertex_count = c_tiles_x * c_tiles_y * 6;
+global constexpr float c_tile_size = 1.0f;
 global float g_time = 0;
 global constexpr float c_pi = 3.1415926535f;
-global constexpr int c_window_width = 1920*0.5f;
-global constexpr int c_window_height = 1080*0.5f;
+global constexpr int c_window_width = 1920;
+global constexpr int c_window_height = 1080;
 global constexpr s_v2 c_window_size = {c_window_width, c_window_height};
 global constexpr s_v2 c_half_window_size = {c_window_width * 0.5f, c_window_height * 0.5f};
 global s_player player;
@@ -251,7 +252,6 @@ int main()
 		ticks_before = ticks;
 		SDL_Event event = zero;
 
-		b8 do_jump = false;
 		while(SDL_PollEvent(&event)) {
 			if(event.type == SDL_EVENT_QUIT) {
 				running = false;
@@ -264,7 +264,7 @@ int main()
 					generate_terrain = true;
 				}
 				else if(event.key.key == SDLK_SPACE) {
-					do_jump = true;
+					player.want_to_jump_timestamp = g_time;
 				}
 				else if(event.key.key == SDLK_G) {
 					if(view_state == e_view_state_shadow_map) {
@@ -407,6 +407,11 @@ int main()
 						y_arr[5] = yy;
 
 						for(int i = 0; i < 6; i += 1) {
+							x_arr[i] *= c_tile_size;
+							y_arr[i] *= c_tile_size;
+						}
+
+						for(int i = 0; i < 6; i += 1) {
 							float m = fnlGetNoise2D(&noise_arr[c_biome_count], x_arr[i], y_arr[i]);
 							float total_p = 0.0f;
 							float p_arr[c_biome_count] = zero;
@@ -433,16 +438,16 @@ int main()
 
 							// vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv		hardcoded terrain start		vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv
 							{
-								float h = smoothstep2(30, 60, x_arr[i]) * 40;
-								h += smoothstep2(100, 130, x_arr[i]) * 160;
-								h += smoothstep2(200, 230, x_arr[i]) * 320;
-								h = 0;
-								z_arr[i] = h;
-								height_arr[i] = h;
-								height_scale_arr[i] = 1;
-								color_arr[i] = v3(
-									(x + y) % 2 == 0 ? 0.5f : 0.3f
-								);
+								// float h = smoothstep2(30, 60, x_arr[i]) * 40;
+								// h += smoothstep2(100, 130, x_arr[i]) * 160;
+								// h += smoothstep2(200, 230, x_arr[i]) * 320;
+								// h = 0;
+								// z_arr[i] = h;
+								// height_arr[i] = h;
+								// height_scale_arr[i] = 1;
+								// color_arr[i] = v3(
+								// 	(x + y) % 2 == 0 ? 0.5f : 0.3f
+								// );
 							}
 							// ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^		hardcoded terrain end		^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 						}
@@ -462,13 +467,13 @@ int main()
 				{
 					s_v3* sum_normal_arr = (s_v3*)calloc(1, sizeof(s_v3) * c_vertex_count);
 					for(int i = 0; i < c_vertex_count; i += 1) {
-						int x = roundfi(transfer_data[i].pos.x);
-						int y = roundfi(transfer_data[i].pos.y);
+						int x = floorfi(transfer_data[i].pos.x / c_tile_size);
+						int y = floorfi(transfer_data[i].pos.y / c_tile_size);
 						sum_normal_arr[x + y * c_tiles_x] += transfer_data[i].normal;
 					}
 					for(int i = 0; i < c_vertex_count; i += 1) {
-						int x = roundfi(transfer_data[i].pos.x);
-						int y = roundfi(transfer_data[i].pos.y);
+						int x = floorfi(transfer_data[i].pos.x / c_tile_size);
+						int y = floorfi(transfer_data[i].pos.y / c_tile_size);
 						transfer_data[i].normal = v3_normalized(sum_normal_arr[x + y * c_tiles_x]);
 					}
 					free(sum_normal_arr);
@@ -492,7 +497,7 @@ int main()
 
 			{
 				float passed = g_time - g_last_speed_time;
-				if(passed > 1 && !g_speed_buff.active) {
+				if(passed > 0.25f && !g_speed_buff.active) {
 					g_speed_buff = zero;
 					g_speed_buff.active = true;
 					g_speed_buff.start_yaw = cam_yaw;
@@ -533,7 +538,7 @@ int main()
 					// player.vel.y += temp.y;
 				}
 
-				if(do_jump && player.on_ground)  {
+				if(g_time - player.want_to_jump_timestamp < 0.1f && player.on_ground)  {
 					player.vel.z = 0.5f;
 				}
 				player.pos += player.vel;
@@ -560,8 +565,8 @@ int main()
 				b8 collides = false;
 				float worst_dot = 1;
 				s_v3 worst_normal = zero;
-				int player_x = (int)player.pos.x;
-				int player_y = (int)player.pos.y;
+				int player_x = floorfi(player.pos.x / c_tile_size);
+				int player_y = floorfi(player.pos.y / c_tile_size);
 				for(int y = -1; y <= 1; y += 1) {
 					int yy = y + player_y;
 					for(int x = -1; x < 1; x += 1) {
@@ -618,11 +623,13 @@ int main()
 
 		if(swapchain_texture != null) {
 
-			s_v3 sun_pos = v3(-1, c_tiles_y / 2, 10);
+			s_v3 sun_pos = v3(-1, c_tiles_y * c_tile_size / 2, 10);
 			s_v3 sun_dir = v3_normalized(v3(1, 0, -0.1f));
 
 			s_m4 light_view = look_at(sun_pos, sun_pos + sun_dir, v3(0, 0, 1));
-			s_m4 light_projection = make_orthographic(-c_tiles_x * 0.6f, c_tiles_x * 0.6f, -100, 100, -c_tiles_y * 1.1f, c_tiles_y * 1.1f);
+			s_m4 light_projection = make_orthographic(
+				-c_tiles_x * 0.6f * c_tile_size, c_tiles_x * 0.6f * c_tile_size, -100, 100, -c_tiles_y * 1.1f * c_tile_size, c_tiles_y * 1.1f * c_tile_size
+			);
 
 			// vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv		scene to depth start		vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv
 			{
@@ -1057,6 +1064,12 @@ func s_v3 get_triangle_normal(s_v3 v1, s_v3 v2, s_v3 v3)
 func int roundfi(float x)
 {
 	float result = roundf(x);
+	return (int)result;
+}
+
+func int floorfi(float x)
+{
+	float result = floorf(x);
 	return (int)result;
 }
 

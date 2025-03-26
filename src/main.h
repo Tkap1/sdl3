@@ -86,6 +86,7 @@ struct s_fragment_uniform_data
 
 struct s_player
 {
+	float want_to_jump_timestamp;
 	b8 on_ground;
 	s_v3 pos;
 	s_v3 vel;
@@ -206,3 +207,4 @@ func void draw_circle(s_v2 pos, float radius, s_v4 color);
 func s_v4 make_color(float r, float g, float b);
 func s_v4 make_color(float r, float a);
 func float min(float a, float b);
+func int floorfi(float x);
