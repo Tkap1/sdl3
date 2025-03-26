@@ -7,6 +7,8 @@ glslc.exe assets/screen.vert -o assets/screen.vert.spv
 glslc.exe assets/screen.frag -o assets/screen.frag.spv
 glslc.exe assets/depth_only.vert -o assets/depth_only.vert.spv
 glslc.exe assets/depth_only.frag -o assets/depth_only.frag.spv
+glslc.exe assets/circle.vert -o assets/circle.vert.spv
+glslc.exe assets/circle.frag -o assets/circle.frag.spv
 
 mkdir build 2> NUL
 

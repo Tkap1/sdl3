@@ -15,18 +15,22 @@ global SDL_GPUGraphicsPipeline* fill_pipeline;
 global SDL_GPUGraphicsPipeline* line_pipeline;
 global SDL_GPUGraphicsPipeline* screen_pipeline;
 global SDL_GPUGraphicsPipeline* depth_only_pipeline;
+global SDL_GPUGraphicsPipeline* circle_pipeline;
 global SDL_GPUTexture* scene_depth_texture;
 global SDL_GPUTexture* shadow_texture;
 global SDL_GPUSampler* shadow_texture_sampler;
 global b8 UseWireframeMode = false;
 global SDL_GPUBuffer* VertexBuffer;
+global SDL_GPUBuffer* circle_vertex_buffer;
 global constexpr int c_tiles_x = 512;
 global constexpr int c_tiles_y = 512;
 global constexpr int c_vertex_count = c_tiles_x * c_tiles_y * 6;
 global float g_time = 0;
 global constexpr float c_pi = 3.1415926535f;
-global constexpr int c_window_width = 1920;
-global constexpr int c_window_height = 1080;
+global constexpr int c_window_width = 1920*0.5f;
+global constexpr int c_window_height = 1080*0.5f;
+global constexpr s_v2 c_window_size = {c_window_width, c_window_height};
+global constexpr s_v2 c_half_window_size = {c_window_width * 0.5f, c_window_height * 0.5f};
 global s_player player;
 global float cam_yaw;
 global float cam_pitch;
@@ -34,6 +38,11 @@ global s_vertex* transfer_data;
 global SDL_GPUDevice* g_device;
 global SDL_Window* g_window;
 global SDL_GPUTextureFormat g_depth_texture_format = SDL_GPU_TEXTUREFORMAT_INVALID;
+global constexpr int c_max_circles = 1024;
+global s_circle g_circle_arr[c_max_circles];
+global int g_circle_count = 0;
+global s_speed_buff g_speed_buff;
+global float g_last_speed_time = 0;
 
 int main()
 {
@@ -91,22 +100,35 @@ int main()
 	SDL_GPUShader* depth_only_vertex_shader = load_shader("depth_only.vert", 0, 1, 0, 0);
 	SDL_GPUShader* depth_only_fragment_shader = load_shader("depth_only.frag", 0, 0, 0, 0);
 
-	{
-		SDL_GPUVertexElementFormat arr[3] = zero;
-		arr[0] = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3;
-		arr[1] = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3;
-		arr[2] = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4;
-		fill_pipeline = create_pipeline(vertexShader, fragmentShader, SDL_GPU_FILLMODE_FILL, 1, arr, array_count(arr), true);
-		line_pipeline = create_pipeline(vertexShader, fragmentShader, SDL_GPU_FILLMODE_LINE, 1, arr, array_count(arr), true);
-	}
-	screen_pipeline = create_pipeline(screen_vertex_shader, screen_fragment_shader, SDL_GPU_FILLMODE_FILL, 1, null, 0, false);
+	SDL_GPUShader* circle_vertex_shader = load_shader("circle.vert", 0, 1, 0, 0);
+	SDL_GPUShader* circle_fragment_shader = load_shader("circle.frag", 0, 0, 0, 0);
 
 	{
 		SDL_GPUVertexElementFormat arr[3] = zero;
 		arr[0] = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3;
 		arr[1] = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3;
 		arr[2] = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4;
-		depth_only_pipeline = create_pipeline(depth_only_vertex_shader, depth_only_fragment_shader, SDL_GPU_FILLMODE_FILL, 0, arr, array_count(arr), true);
+		fill_pipeline = create_pipeline(vertexShader, fragmentShader, SDL_GPU_FILLMODE_FILL, 1, arr, array_count(arr), true, false);
+		line_pipeline = create_pipeline(vertexShader, fragmentShader, SDL_GPU_FILLMODE_LINE, 1, arr, array_count(arr), true, false);
+	}
+	screen_pipeline = create_pipeline(screen_vertex_shader, screen_fragment_shader, SDL_GPU_FILLMODE_FILL, 1, null, 0, false, false);
+
+	{
+		SDL_GPUVertexElementFormat arr[5] = zero;
+		arr[0] = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4;
+		arr[1] = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4;
+		arr[2] = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4;
+		arr[3] = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4;
+		arr[4] = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4;
+		circle_pipeline = create_pipeline(circle_vertex_shader, circle_fragment_shader, SDL_GPU_FILLMODE_FILL, 1, arr, array_count(arr), false, true);
+	}
+
+	{
+		SDL_GPUVertexElementFormat arr[3] = zero;
+		arr[0] = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3;
+		arr[1] = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3;
+		arr[2] = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4;
+		depth_only_pipeline = create_pipeline(depth_only_vertex_shader, depth_only_fragment_shader, SDL_GPU_FILLMODE_FILL, 0, arr, array_count(arr), true, false);
 	}
 
 	// Clean up shader resources
@@ -116,6 +138,8 @@ int main()
 	SDL_ReleaseGPUShader(g_device, screen_fragment_shader);
 	SDL_ReleaseGPUShader(g_device, depth_only_vertex_shader);
 	SDL_ReleaseGPUShader(g_device, depth_only_fragment_shader);
+	SDL_ReleaseGPUShader(g_device, circle_vertex_shader);
+	SDL_ReleaseGPUShader(g_device, circle_fragment_shader);
 
 
 	{
@@ -173,26 +197,46 @@ int main()
 		shadow_texture_sampler = SDL_CreateGPUSampler(g_device, &info);
 	}
 
-	SDL_GPUBufferCreateInfo buffer_create_info = zero;
-	buffer_create_info.usage = SDL_GPU_BUFFERUSAGE_VERTEX;
-	buffer_create_info.size = sizeof(s_vertex) * c_vertex_count;
-	VertexBuffer = SDL_CreateGPUBuffer(g_device, &buffer_create_info);
+	{
+		SDL_GPUBufferCreateInfo buffer_create_info = zero;
+		buffer_create_info.usage = SDL_GPU_BUFFERUSAGE_VERTEX;
+		buffer_create_info.size = sizeof(s_vertex) * c_vertex_count;
+		VertexBuffer = SDL_CreateGPUBuffer(g_device, &buffer_create_info);
+	}
+
+	{
+		SDL_GPUBufferCreateInfo buffer_create_info = zero;
+		buffer_create_info.usage = SDL_GPU_BUFFERUSAGE_VERTEX;
+		buffer_create_info.size = sizeof(s_circle) * c_max_circles;
+		circle_vertex_buffer = SDL_CreateGPUBuffer(g_device, &buffer_create_info);
+	}
 
 	s_v3 cam_pos = player.pos;
 
 	SDL_SetWindowRelativeMouseMode(g_window, true);
 
-	SDL_GPUTransferBufferCreateInfo transfer_create_info = zero;
-	transfer_create_info.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD;
-	transfer_create_info.size = sizeof(s_vertex) * c_vertex_count;
-	SDL_GPUTransferBuffer* transfer_buffer = SDL_CreateGPUTransferBuffer(g_device, &transfer_create_info);
+	SDL_GPUTransferBuffer* transfer_buffer = null;
+	{
+		SDL_GPUTransferBufferCreateInfo transfer_create_info = zero;
+		transfer_create_info.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD;
+		transfer_create_info.size = sizeof(s_vertex) * c_vertex_count;
+		transfer_buffer = SDL_CreateGPUTransferBuffer(g_device, &transfer_create_info);
+	}
+
+	SDL_GPUTransferBuffer* circle_transfer_buffer = null;
+	{
+		SDL_GPUTransferBufferCreateInfo transfer_create_info = zero;
+		transfer_create_info.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD;
+		transfer_create_info.size = sizeof(s_circle) * c_max_circles;
+		circle_transfer_buffer = SDL_CreateGPUTransferBuffer(g_device, &transfer_create_info);
+	}
 
 	SDL_GPUTransferBufferLocation location = zero;
 	location.transfer_buffer = transfer_buffer;
 
-	SDL_GPUBufferRegion region = zero;
-	region.buffer = VertexBuffer;
-	region.size = sizeof(s_vertex) * c_vertex_count;
+	SDL_GPUBufferRegion vertex_buffer_region = zero;
+	vertex_buffer_region.buffer = VertexBuffer;
+	vertex_buffer_region.size = sizeof(s_vertex) * c_vertex_count;
 
 	b8 generate_terrain = true;
 
@@ -263,7 +307,7 @@ int main()
 		cam_up = v3_normalized(cam_up);
 
 		s_v3 player_wanted_dir = zero;
-		float player_wanted_speed = 5;
+		float player_wanted_speed = 0.01f;
 		{
 			b8* key_arr = (b8*)SDL_GetKeyboardState(null);
 			s_v3 cam_side = v3_cross(cam_front, v3(0, 0, 1));
@@ -389,15 +433,16 @@ int main()
 
 							// vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv		hardcoded terrain start		vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv
 							{
-								// float h = smoothstep2(30, 60, x_arr[i]) * 40;
-								// h += smoothstep2(100, 130, x_arr[i]) * 160;
-								// h += smoothstep2(200, 230, x_arr[i]) * 320;
-								// z_arr[i] = h;
-								// height_arr[i] = h;
-								// height_scale_arr[i] = 1;
-								// color_arr[i] = v3(
-								// 	(x + y) % 2 == 0 ? 0.5f : 0.3f
-								// );
+								float h = smoothstep2(30, 60, x_arr[i]) * 40;
+								h += smoothstep2(100, 130, x_arr[i]) * 160;
+								h += smoothstep2(200, 230, x_arr[i]) * 320;
+								h = 0;
+								z_arr[i] = h;
+								height_arr[i] = h;
+								height_scale_arr[i] = 1;
+								color_arr[i] = v3(
+									(x + y) % 2 == 0 ? 0.5f : 0.3f
+								);
 							}
 							// ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^		hardcoded terrain end		^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 						}
@@ -433,35 +478,69 @@ int main()
 
 			SDL_UnmapGPUTransferBuffer(g_device, transfer_buffer);
 
-			SDL_GPUCommandBuffer* uploadCmdBuf = SDL_AcquireGPUCommandBuffer(g_device);
-			SDL_GPUCopyPass* copyPass = SDL_BeginGPUCopyPass(uploadCmdBuf);
+			SDL_GPUCommandBuffer* upload_cmd_buff = SDL_AcquireGPUCommandBuffer(g_device);
+			SDL_GPUCopyPass* copy_pass = SDL_BeginGPUCopyPass(upload_cmd_buff);
 
-			SDL_UploadToGPUBuffer(copyPass, &location, &region, false);
-			SDL_EndGPUCopyPass(copyPass);
-			SDL_SubmitGPUCommandBuffer(uploadCmdBuf);
+			SDL_UploadToGPUBuffer(copy_pass, &location, &vertex_buffer_region, false);
+			SDL_EndGPUCopyPass(copy_pass);
+			SDL_SubmitGPUCommandBuffer(upload_cmd_buff);
 			// SDL_ReleaseGPUTransferBuffer(g_device, transferBuffer);
 		}
 
 		// vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv		update start		vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv
 		{
+
 			{
-				s_v3 gravity = v3(0, 0, -1);
-				player.vel += gravity * delta * 1;
+				float passed = g_time - g_last_speed_time;
+				if(passed > 1 && !g_speed_buff.active) {
+					g_speed_buff = zero;
+					g_speed_buff.active = true;
+					g_speed_buff.start_yaw = cam_yaw;
+				}
+			}
+
+			{
+				s_v3 gravity = v3(0, 0, -0.006);
+				player.vel += gravity;
 
 				{
-					s_v3 temp = player.vel + player_wanted_dir * delta * player_wanted_speed;
-					temp.z = 0;
-					float l = v3_length(temp);
-					temp = v3_set_mag(temp, at_most(1.0f, l));
-					player.vel.xy = temp.xy;
+					constexpr float c_max_input_mag = 0.25f;
+					s_v3 wanted = player_wanted_dir * player_wanted_speed;
+					float wanted_length = v3_length(wanted);
+					s_v3 curr = v3(player.vel.x, player.vel.y, 0);
+					float curr_length = v3_length(curr);
+					s_v3 combined = curr + wanted;
+					float combined_length = v3_length(combined);
+					// float can0 = max(0.0f, c_max_input_mag - curr_length);
+					if(combined_length <= curr_length) {
+						player.vel.x += wanted.x;
+						player.vel.y += wanted.y;
+					}
+					else {
+						float can1 = clamp(c_max_input_mag - combined_length, 0.0f, wanted_length);
+						s_v3 temp3 = v3_set_mag(wanted, can1);
+						player.vel.x += temp3.x;
+						player.vel.y += temp3.y;
+					}
+
+					// float input_mag = v3_length(temp);
+					// float player_curr_mag = v3_length(v3(player.vel.x, player.vel.y, 0.0f));
+					// float max_mag_from_input = clamp(0.15f - player_curr_mag, 0.0f, input_mag);
+					// temp = v3_set_mag(temp, max_mag_from_input);
+					// // printf("%f, %f\n", temp.x, temp.y);
+					// // printf("%f\n", max_mag_from_input);
+					// player.vel.x += temp.x;
+					// player.vel.y += temp.y;
 				}
 
-				if(do_jump)  {
+				if(do_jump && player.on_ground)  {
 					player.vel.z = 0.5f;
 				}
 				player.pos += player.vel;
-				player.vel.x *= 0.9f;
-				player.vel.y *= 0.9f;
+				if(player.on_ground) {
+					player.vel.x *= 0.75f;
+					player.vel.y *= 0.75f;
+				}
 
 				constexpr s_v3 c_player_size = v3(0.1f, 0.1f, 6.0f);
 				s_shape a = zero;
@@ -657,42 +736,65 @@ int main()
 					SDL_EndGPURenderPass(render_pass);
 				}
 				// ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^		draw scene end		^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+				{
+					float yaw_diff[2] = {
+						min(c_pi * 0.25f, fabsf((g_speed_buff.start_yaw - c_pi * 0.25f) - cam_yaw)),
+						min(c_pi * 0.25f, fabsf((g_speed_buff.start_yaw + c_pi * 0.25f) - cam_yaw)),
+					};
+					if(!g_speed_buff.hit_arr[0] && g_speed_buff.active) {
+						s_v2 pos = c_half_window_size;
+						pos.x += c_half_window_size.x * yaw_diff[0];
+						draw_circle(pos, 200, make_color(1, 0, 0));
+					}
+					if(!g_speed_buff.hit_arr[1] && g_speed_buff.active) {
+						s_v2 pos = c_half_window_size;
+						pos.x -= c_half_window_size.x * yaw_diff[1];
+						draw_circle(pos, 200, make_color(0, 1, 0));
+					}
+					if(yaw_diff[0] <= 0.1f) {
+						g_speed_buff.hit_arr[0] = true;
+					}
+					if(yaw_diff[1] <= 0.1f) {
+						g_speed_buff.hit_arr[1] = true;
+					}
+					b8 apply_buff = g_speed_buff.active && g_speed_buff.hit_arr[0] && g_speed_buff.hit_arr[1];
+					if(apply_buff) {
+						g_speed_buff.active = false;
+						g_last_speed_time = g_time;
+						player.vel.x *= 2;
+						player.vel.y *= 2;
+						// printf("%f, %f\n", player.vel.x, player.vel.y);
+					}
+				}
+
+				// vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv		circle start		vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv
+				if(g_circle_count > 0) {
+					SDL_GPUColorTargetInfo color_target_info = { 0 };
+					color_target_info.texture = swapchain_texture;
+					color_target_info.load_op = SDL_GPU_LOADOP_LOAD;
+					color_target_info.store_op = SDL_GPU_STOREOP_STORE;
+
+					SDL_GPURenderPass* render_pass = SDL_BeginGPURenderPass(cmdbuf, &color_target_info, 1, null);
+					SDL_BindGPUGraphicsPipeline(render_pass, circle_pipeline);
+					{
+						SDL_GPUBufferBinding binding = zero;
+						binding.buffer = circle_vertex_buffer;
+						upload_to_gpu_buffer(g_circle_arr, sizeof(s_circle) * g_circle_count, circle_vertex_buffer, circle_transfer_buffer);
+						SDL_BindGPUVertexBuffers(render_pass, 0, &binding, 1);
+					}
+					{
+						s_vertex_uniform_data2 data = zero;
+						data.view = m4_identity();
+						data.projection = make_orthographic(0, c_window_width, c_window_height, 0, 0, 1);
+						SDL_PushGPUVertexUniformData(cmdbuf, 0, &data, sizeof(data));
+					}
+					SDL_DrawGPUPrimitives(render_pass, 6, g_circle_count, 0, 0);
+					SDL_EndGPURenderPass(render_pass);
+					g_circle_count = 0;
+				}
+				// ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^		circle end		^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 			}
-
-			// vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv		scene to screen start		vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv
-			// {
-			// 	SDL_GPUColorTargetInfo color_target_info = { 0 };
-			// 	color_target_info.texture = swapchain_texture;
-			// 	color_target_info.clear_color = { 0.2f, 0.2f, 0.3f, 1.0f };
-			// 	color_target_info.load_op = SDL_GPU_LOADOP_CLEAR;
-			// 	color_target_info.store_op = SDL_GPU_STOREOP_STORE;
-
-			// 	SDL_GPUDepthStencilTargetInfo depth_stencil_target_info = zero;
-			// 	depth_stencil_target_info.texture = scene_depth_texture;
-			// 	depth_stencil_target_info.cycle = true;
-			// 	depth_stencil_target_info.clear_depth = 1;
-			// 	depth_stencil_target_info.load_op = SDL_GPU_LOADOP_CLEAR;
-			// 	depth_stencil_target_info.store_op = SDL_GPU_STOREOP_STORE;
-			// 	depth_stencil_target_info.stencil_load_op = SDL_GPU_LOADOP_DONT_CARE;
-			// 	depth_stencil_target_info.stencil_store_op = SDL_GPU_STOREOP_DONT_CARE;
-
-			// 	SDL_GPURenderPass* render_pass = SDL_BeginGPURenderPass(cmdbuf, &color_target_info, 1, &depth_stencil_target_info);
-			// 	SDL_BindGPUGraphicsPipeline(render_pass, screen_pipeline);
-			// 	{
-			// 		s_v4 color = v4(1, 1, 1, 1);
-			// 		SDL_PushGPUVertexUniformData(cmdbuf, 0, &color, sizeof(color));
-			// 	}
-			// 	{
-			// 		SDL_GPUTextureSamplerBinding binding = zero;
-			// 		binding.texture = shadow_texture;
-			// 		binding.sampler = shadow_texture_sampler;
-			// 		SDL_BindGPUFragmentSamplers(render_pass, 0, &binding, 1);
-			// 	}
-
-			// 	SDL_DrawGPUPrimitives(render_pass, 6, 1, 0, 0);
-			// 	SDL_EndGPURenderPass(render_pass);
-			// }
-			// ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^		scene to screen end		^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 		}
 
 		SDL_SubmitGPUCommandBuffer(cmdbuf);
@@ -781,7 +883,7 @@ func s_m4 m4_identity()
 func s_m4 m4_rotate(float angle, s_v3 axis)
 {
 
-	s_m4 Result = m4_identity();
+	s_m4 result = m4_identity();
 
 	axis = v3_normalized(axis);
 
@@ -789,19 +891,19 @@ func s_m4 m4_rotate(float angle, s_v3 axis)
 	float CosTheta = cosf(angle);
 	float CosValue = 1.0f - CosTheta;
 
-	Result.all2[0][0] = (axis.x * axis.x * CosValue) + CosTheta;
-	Result.all2[0][1] = (axis.x * axis.y * CosValue) + (axis.z * SinTheta);
-	Result.all2[0][2] = (axis.x * axis.z * CosValue) - (axis.y * SinTheta);
+	result.all2[0][0] = (axis.x * axis.x * CosValue) + CosTheta;
+	result.all2[0][1] = (axis.x * axis.y * CosValue) + (axis.z * SinTheta);
+	result.all2[0][2] = (axis.x * axis.z * CosValue) - (axis.y * SinTheta);
 
-	Result.all2[1][0] = (axis.y * axis.x * CosValue) - (axis.z * SinTheta);
-	Result.all2[1][1] = (axis.y * axis.y * CosValue) + CosTheta;
-	Result.all2[1][2] = (axis.y * axis.z * CosValue) + (axis.x * SinTheta);
+	result.all2[1][0] = (axis.y * axis.x * CosValue) - (axis.z * SinTheta);
+	result.all2[1][1] = (axis.y * axis.y * CosValue) + CosTheta;
+	result.all2[1][2] = (axis.y * axis.z * CosValue) + (axis.x * SinTheta);
 
-	Result.all2[2][0] = (axis.z * axis.x * CosValue) + (axis.y * SinTheta);
-	Result.all2[2][1] = (axis.z * axis.y * CosValue) - (axis.x * SinTheta);
-	Result.all2[2][2] = (axis.z * axis.z * CosValue) + CosTheta;
+	result.all2[2][0] = (axis.z * axis.x * CosValue) + (axis.y * SinTheta);
+	result.all2[2][1] = (axis.z * axis.y * CosValue) - (axis.x * SinTheta);
+	result.all2[2][2] = (axis.z * axis.z * CosValue) + CosTheta;
 
-	return (Result);
+	return result;
 }
 
 func s_v3 v3_normalized(s_v3 v)
@@ -961,7 +1063,7 @@ func int roundfi(float x)
 func SDL_GPUGraphicsPipeline* create_pipeline(
 	SDL_GPUShader* vertex_shader, SDL_GPUShader* fragment_shader, SDL_GPUFillMode fill_mode, int num_color_targets,
 	SDL_GPUVertexElementFormat* element_format_arr, int element_format_count,
-	b8 has_depth
+	b8 has_depth, b8 support_instancing
 )
 {
 	SDL_GPUGraphicsPipelineCreateInfo pipeline_create_info = zero;
@@ -975,13 +1077,27 @@ func SDL_GPUGraphicsPipeline* create_pipeline(
 	pipeline_create_info.target_info.depth_stencil_format = g_depth_texture_format;
 	pipeline_create_info.depth_stencil_state.compare_op = SDL_GPU_COMPAREOP_LESS;
 	pipeline_create_info.depth_stencil_state.write_mask = 0xFF;
-	SDL_GPUColorTargetDescription color_target_description = {
-		.format = SDL_GetGPUSwapchainTextureFormat(g_device, g_window)
-	};
+	SDL_GPUColorTargetDescription color_target_description = zero;
+	color_target_description.format = SDL_GetGPUSwapchainTextureFormat(g_device, g_window);
+	color_target_description.blend_state.src_color_blendfactor = SDL_GPU_BLENDFACTOR_SRC_ALPHA;
+	color_target_description.blend_state.dst_color_blendfactor = SDL_GPU_BLENDFACTOR_ONE_MINUS_SRC_ALPHA;
+	color_target_description.blend_state.color_blend_op = SDL_GPU_BLENDOP_ADD;
+
+	// @Note(tkap, 25/03/2025): no idea what this does
+	color_target_description.blend_state.src_alpha_blendfactor = SDL_GPU_BLENDFACTOR_ONE;
+	color_target_description.blend_state.dst_alpha_blendfactor = SDL_GPU_BLENDFACTOR_ONE;
+	color_target_description.blend_state.alpha_blend_op = SDL_GPU_BLENDOP_ADD;
+
+	color_target_description.blend_state.enable_blend = true;
 	pipeline_create_info.target_info.color_target_descriptions = num_color_targets > 0 ? &color_target_description : null;
 	pipeline_create_info.vertex_input_state.num_vertex_buffers = element_format_count > 0 ? 1 : 0;
 	SDL_GPUVertexBufferDescription gpu_vertex_buffer_description = zero;
-	gpu_vertex_buffer_description.input_rate = SDL_GPU_VERTEXINPUTRATE_VERTEX;
+	if(support_instancing) {
+		gpu_vertex_buffer_description.input_rate = SDL_GPU_VERTEXINPUTRATE_INSTANCE;
+	}
+	else {
+		gpu_vertex_buffer_description.input_rate = SDL_GPU_VERTEXINPUTRATE_VERTEX;
+	}
 
 	int pitch = 0;
 	SDL_GPUVertexAttribute vertex_attribute_arr[16] = zero;
@@ -1137,6 +1253,12 @@ func float max(float a, float b)
 	return result;
 }
 
+func float min(float a, float b)
+{
+	float result = a <= b ? a : b;
+	return result;
+}
+
 func float at_most(float a, float b)
 {
 	float result = b >= a ? a : b;
@@ -1157,4 +1279,103 @@ func s_v3 v3_set_mag(s_v3 v, float mag)
 	s_v3 result = v3_normalized(v);
 	result = result * mag;
 	return result;
+}
+
+func s_v4 make_color(float r)
+{
+	s_v4 result;
+	result.x = r;
+	result.y = r;
+	result.z = r;
+	result.w = 1;
+	return result;
+}
+
+func s_v4 make_color(float r, float a)
+{
+	s_v4 result;
+	result.x = r;
+	result.y = r;
+	result.z = r;
+	result.w = a;
+	return result;
+}
+
+func s_v4 make_color(float r, float g, float b)
+{
+	s_v4 result;
+	result.x = r;
+	result.y = g;
+	result.z = b;
+	result.w = 1;
+	return result;
+}
+
+func void upload_to_gpu_buffer(void* data, int data_size, SDL_GPUBuffer* vertex_buffer, SDL_GPUTransferBuffer* transfer_buffer)
+{
+	void* buffer = SDL_MapGPUTransferBuffer(g_device, transfer_buffer, false);
+	// nocheckin extra cringe copy. we probably want begin upload and end upload so we can write directly to this instead of writing to our own thing
+	// and then doing this memcpy
+	memcpy(buffer, data, data_size);
+	SDL_UnmapGPUTransferBuffer(g_device, transfer_buffer);
+	SDL_GPUCommandBuffer* upload_cmd_buff = SDL_AcquireGPUCommandBuffer(g_device);
+	SDL_GPUCopyPass* copy_pass = SDL_BeginGPUCopyPass(upload_cmd_buff);
+
+	SDL_GPUTransferBufferLocation location = zero;
+	location.transfer_buffer = transfer_buffer;
+
+	SDL_GPUBufferRegion region = zero;
+	region.buffer = vertex_buffer;
+	region.size = data_size;
+
+	SDL_UploadToGPUBuffer(copy_pass, &location, &region, false);
+	SDL_EndGPUCopyPass(copy_pass);
+	SDL_SubmitGPUCommandBuffer(upload_cmd_buff);
+	// SDL_ReleaseGPUTransferBuffer(g_device, transferBuffer);
+}
+
+func s_m4 m4_scale(s_v3 v)
+{
+	s_m4 result = {
+		v.x, 0, 0, 0,
+		0, v.y, 0, 0,
+		0, 0, v.z, 0,
+		0, 0, 0, 1,
+	};
+	return result;
+}
+
+func s_m4 m4_translate(s_v3 v)
+{
+	s_m4 result = {
+		1, 0, 0, 0,
+		0, 1, 0, 0,
+		0, 0, 1, 0,
+		v.x, v.y, v.z, 1,
+	};
+	return result;
+}
+
+func s_m4 m4_multiply(s_m4 a, s_m4 b)
+{
+	s_m4 result = zero;
+	for(int i = 0; i < 4; i += 1) {
+		for(int j = 0; j < 4; j += 1) {
+			for(int k = 0; k < 4; k += 1) {
+				result.all2[j][i] += a.all2[k][i] * b.all2[j][k];
+			}
+		}
+	}
+
+	return result;
+}
+
+func void draw_circle(s_v2 pos, float radius, s_v4 color)
+{
+	s_circle circle = zero;
+	circle.model = m4_translate(v3(pos.x, pos.y, 0));
+	circle.model = m4_multiply(circle.model, m4_scale(v3(radius * 0.5f, radius * 0.5f, 1.0f)));
+	circle.color = color;
+	g_circle_arr[g_circle_count] = circle;
+	g_circle_count += 1;
 }

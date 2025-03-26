@@ -50,6 +50,12 @@ struct s_vertex
 	float a;
 };
 
+struct s_circle
+{
+	s_m4 model;
+	s_v4 color;
+};
+
 struct s_vertex_uniform_data0
 {
 	s_m4 model;
@@ -65,6 +71,13 @@ struct s_vertex_uniform_data1
 	s_m4 light_view;
 	s_m4 light_projection;
 };
+
+struct s_vertex_uniform_data2
+{
+	s_m4 view;
+	s_m4 projection;
+};
+
 
 struct s_fragment_uniform_data
 {
@@ -84,6 +97,20 @@ struct s_shape
 	int vertex_count;
 };
 
+struct s_speed_buff
+{
+	b8 active;
+	float start_yaw;
+	b8 hit_arr[2];
+};
+
+func constexpr s_v2 v2(float x, float y)
+{
+	s_v2 result;
+	result.x = x;
+	result.y = y;
+	return result;
+}
 
 template <typename T>
 func constexpr s_v3 v3(T v)
@@ -161,13 +188,21 @@ func int roundfi(float x);
 func SDL_GPUGraphicsPipeline* create_pipeline(
 	SDL_GPUShader* vertex_shader, SDL_GPUShader* fragment_shader, SDL_GPUFillMode fill_mode, int num_color_targets,
 	SDL_GPUVertexElementFormat* element_format_arr, int element_format_count,
-	b8 has_depth
+	b8 has_depth, b8 support_instancing
 );
 func s_m4 make_orthographic(float Left, float Right, float Bottom, float Top, float Near, float Far);
-func s_m4 make_orthographic_ai(float left, float right, float bottom, float top, float near, float far);
 func b8 SATCollision3D(s_shape shapeA, s_shape shapeB);
 func float get_triangle_height_at_xy(s_v3 t1, s_v3 t2, s_v3 t3, s_v2 p);
 func float max(float a, float b);
 func float at_most(float a, float b);
 func float sign(float x);
 func s_v3 v3_set_mag(s_v3 v, float mag);
+func s_v4 make_color(float r);
+func void upload_to_gpu_buffer(void* data, int data_size, SDL_GPUBuffer* vertex_buffer, SDL_GPUTransferBuffer* transfer_buffer);
+func s_m4 m4_scale(s_v3 v);
+func s_m4 m4_multiply(s_m4 a, s_m4 b);
+func s_m4 m4_translate(s_v3 v);
+func void draw_circle(s_v2 pos, float radius, s_v4 color);
+func s_v4 make_color(float r, float g, float b);
+func s_v4 make_color(float r, float a);
+func float min(float a, float b);

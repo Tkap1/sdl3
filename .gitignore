@@ -31,3 +31,4 @@
 *.pdb
 *.ilk
 build/main.exe
+*.rdi
