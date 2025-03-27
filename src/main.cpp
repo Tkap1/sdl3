@@ -2,6 +2,8 @@
 // to get slope dir
 // RayMarch: rotate normal, project player velocity onto that vector, then stretch it back to the speed (if this is about wall sliding)
 
+// what if we just add the triangle normal to the player's velocity
+
 
 #include <stdlib.h>
 #include <stdio.h>
@@ -17,8 +19,10 @@
 global char* BasePath = "";
 global SDL_GPUGraphicsPipeline* fill_pipeline;
 global SDL_GPUGraphicsPipeline* line_pipeline;
+global SDL_GPUGraphicsPipeline* triangle_pipeline;
 global SDL_GPUGraphicsPipeline* screen_pipeline;
 global SDL_GPUGraphicsPipeline* depth_only_pipeline;
+global SDL_GPUGraphicsPipeline* triangle_depth_only_pipeline;
 global SDL_GPUGraphicsPipeline* circle_pipeline;
 global SDL_GPUTexture* scene_depth_texture;
 global SDL_GPUTexture* shadow_texture;
@@ -27,6 +31,7 @@ global b8 UseWireframeMode = false;
 global SDL_GPUBuffer* VertexBuffer;
 global SDL_GPUBuffer* VertexBuffer2;
 global SDL_GPUBuffer* circle_vertex_buffer;
+global SDL_GPUBuffer* triangle_vertex_buffer;
 global constexpr int c_tiles_x = 512;
 global constexpr int c_tiles_y = 512;
 global constexpr int c_vertex_count = c_tiles_x * c_tiles_y * 6;
@@ -45,12 +50,16 @@ global SDL_GPUDevice* g_device;
 global SDL_Window* g_window;
 global SDL_GPUTextureFormat g_depth_texture_format = SDL_GPU_TEXTUREFORMAT_INVALID;
 global constexpr int c_max_circles = 1024;
+global constexpr int c_max_triangles = 65536;
 global s_circle g_circle_arr[c_max_circles];
+global s_triangle g_triangle_arr[c_max_triangles];
 global int g_circle_count = 0;
+global int g_triangle_count = 0;
 global s_speed_buff g_speed_buff;
 global float g_last_speed_time = 0;
 global constexpr s_v3 c_player_size = v3(0.1f, 0.1f, 6.0f);
 global constexpr int c_max_mesh_instances = 1024;
+global s_list<s_sphere, 32> g_sphere_arr;
 
 int main()
 {
@@ -59,6 +68,8 @@ int main()
 	g_player.pos.x = 10;
 	g_player.pos.y = 10;
 	g_player.pos.z = 20;
+
+	s_ply_mesh mesh = parse_ply_mesh("assets/sphere.ply");
 
 	g_device = SDL_CreateGPUDevice(
 		SDL_GPU_SHADERFORMAT_SPIRV,
@@ -111,6 +122,8 @@ int main()
 	SDL_GPUShader* circle_vertex_shader = load_shader("circle.vert", 0, 1, 0, 0);
 	SDL_GPUShader* circle_fragment_shader = load_shader("circle.frag", 0, 0, 0, 0);
 
+	SDL_GPUShader* triangle_vertex_shader = load_shader("triangle.vert", 0, 1, 0, 0);
+
 	{
 		s_list<SDL_GPUVertexElementFormat, 16> vertex_attributes;
 		vertex_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3);
@@ -124,6 +137,18 @@ int main()
 		fill_pipeline = create_pipeline(vertexShader, fragmentShader, SDL_GPU_FILLMODE_FILL, 1, vertex_attributes, instance_attributes, true);
 		line_pipeline = create_pipeline(vertexShader, fragmentShader, SDL_GPU_FILLMODE_LINE, 1, vertex_attributes, instance_attributes, true);
 	}
+
+	{
+		s_list<SDL_GPUVertexElementFormat, 16> instance_attributes;
+		instance_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3);
+		instance_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3);
+		instance_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3);
+		instance_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3);
+		instance_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_FLOAT2);
+		instance_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4);
+		triangle_pipeline = create_pipeline(triangle_vertex_shader, fragmentShader, SDL_GPU_FILLMODE_FILL, 1, zero, instance_attributes, true);
+	}
+
 	screen_pipeline = create_pipeline(screen_vertex_shader, screen_fragment_shader, SDL_GPU_FILLMODE_FILL, 1, zero, zero, false);
 
 	{
@@ -149,6 +174,17 @@ int main()
 		depth_only_pipeline = create_pipeline(depth_only_vertex_shader, depth_only_fragment_shader, SDL_GPU_FILLMODE_FILL, 0, vertex_attributes, instance_attributes, true);
 	}
 
+	{
+		s_list<SDL_GPUVertexElementFormat, 16> instance_attributes;
+		instance_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3);
+		instance_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3);
+		instance_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3);
+		instance_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3);
+		instance_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_FLOAT2);
+		instance_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4);
+		triangle_depth_only_pipeline = create_pipeline(triangle_vertex_shader, depth_only_fragment_shader, SDL_GPU_FILLMODE_FILL, 0, zero, instance_attributes, true);
+	}
+
 	// Clean up shader resources
 	SDL_ReleaseGPUShader(g_device, vertexShader);
 	SDL_ReleaseGPUShader(g_device, fragmentShader);
@@ -158,6 +194,7 @@ int main()
 	SDL_ReleaseGPUShader(g_device, depth_only_fragment_shader);
 	SDL_ReleaseGPUShader(g_device, circle_vertex_shader);
 	SDL_ReleaseGPUShader(g_device, circle_fragment_shader);
+	SDL_ReleaseGPUShader(g_device, triangle_vertex_shader);
 
 
 	{
@@ -236,6 +273,13 @@ int main()
 		circle_vertex_buffer = SDL_CreateGPUBuffer(g_device, &buffer_create_info);
 	}
 
+	{
+		SDL_GPUBufferCreateInfo buffer_create_info = zero;
+		buffer_create_info.usage = SDL_GPU_BUFFERUSAGE_VERTEX;
+		buffer_create_info.size = sizeof(s_triangle) * c_max_triangles;
+		triangle_vertex_buffer = SDL_CreateGPUBuffer(g_device, &buffer_create_info);
+	}
+
 	s_v3 cam_pos = g_player.pos;
 
 	SDL_SetWindowRelativeMouseMode(g_window, true);
@@ -254,6 +298,14 @@ int main()
 		transfer_create_info.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD;
 		transfer_create_info.size = sizeof(s_circle) * c_max_circles;
 		circle_transfer_buffer = SDL_CreateGPUTransferBuffer(g_device, &transfer_create_info);
+	}
+
+	SDL_GPUTransferBuffer* triangle_transfer_buffer = null;
+	{
+		SDL_GPUTransferBufferCreateInfo transfer_create_info = zero;
+		transfer_create_info.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD;
+		transfer_create_info.size = sizeof(s_triangle) * c_max_triangles;
+		triangle_transfer_buffer = SDL_CreateGPUTransferBuffer(g_device, &transfer_create_info);
 	}
 
 	SDL_GPUTransferBuffer* transfer_buffer2 = null;
@@ -313,6 +365,11 @@ int main()
 					else {
 						view_state = e_view_state_depth;
 					}
+				}
+			}
+			else if(event.type == SDL_EVENT_MOUSE_BUTTON_DOWN) {
+				if(event.button.button == SDL_BUTTON_LEFT) {
+					g_player.want_to_shoot_timestamp = g_time;
 				}
 			}
 			else if(event.type == SDL_EVENT_MOUSE_MOTION) {
@@ -471,8 +528,8 @@ int main()
 							// vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv		hardcoded terrain start		vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv
 							{
 								// float h = smoothstep2(30, 60, x_arr[i]) * 40;
-								// h += smoothstep2(100, 130, x_arr[i]) * 160;
-								// h += smoothstep2(200, 230, x_arr[i]) * 320;
+								// h += smoothstep2(100, 130, x_arr[i]) * 80;
+								// h += smoothstep2(200, 230, x_arr[i]) * 160;
 								// // h = roundf(sinf(x_arr[i] * 0.1f)) * 10;
 
 								// z_arr[i] = h;
@@ -484,7 +541,6 @@ int main()
 							}
 							// ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^		hardcoded terrain end		^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 						}
-
 
 						s_v3 normal_arr[2] = zero;
 						normal_arr[0] = get_triangle_normal(v3(x_arr[0], y_arr[0], z_arr[0]), v3(x_arr[1], y_arr[1], z_arr[1]), v3(x_arr[2], y_arr[2], z_arr[2]));
@@ -528,6 +584,17 @@ int main()
 
 		// vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv		update start		vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv
 		{
+
+			{
+				float passed = g_time - g_player.want_to_shoot_timestamp;
+				if(passed <= 0.0f) {
+					s_sphere sphere = zero;
+					sphere.pos = g_player.pos + cam_front * 3;
+					sphere.vel = cam_front * 0.75f;
+					sphere.spawn_timestamp = g_time;
+					g_sphere_arr.add(sphere);
+				}
+			}
 
 			{
 				float passed = g_time - g_last_speed_time;
@@ -598,7 +665,7 @@ int main()
 					s_v3 small_movement = temp_movement / c_steps;
 					for(int j = 0; j < c_steps; j += 1) {
 						g_player.pos += small_movement;
-						s_collision_data temp_collision_data = check_collision(g_player);
+						s_collision_data temp_collision_data = check_collision(g_player.pos, make_box(g_player.pos, c_player_size));
 						if(temp_collision_data.collides) {
 							s_v3 normal = get_triangle_normal(temp_collision_data.vertices[0], temp_collision_data.vertices[1], temp_collision_data.vertices[2]);
 							g_player.pos -= small_movement;
@@ -645,6 +712,29 @@ int main()
 				// }
 			}
 
+			for(int i = 0; i < g_sphere_arr.count; i += 1) {
+				s_sphere* sphere = &g_sphere_arr[i];
+				sphere->vel.z -= 0.005f;
+				constexpr int c_steps = 100;
+				s_v3 small_movement = sphere->vel / c_steps;
+				for(int j = 0; j < c_steps; j += 1) {
+					sphere->pos += small_movement;
+					s_collision_data collision_data = check_collision(sphere->pos, make_box(sphere->pos, v3(0.1f)));
+					if(collision_data.collides) {
+						sphere->pos -= small_movement;
+						s_v3 normal = get_triangle_normal(collision_data.vertices[0], collision_data.vertices[1], collision_data.vertices[2]);
+						sphere->vel = v3_reflect(sphere->vel, normal) * 0.9f;
+						break;
+					}
+				}
+				float passed = g_time - sphere->spawn_timestamp;
+				if(passed > 10) {
+					g_sphere_arr[i] = g_sphere_arr[g_sphere_arr.count - 1];
+					g_sphere_arr.count -= 1;
+					i -= 1;
+				}
+			}
+
 		}
 		cam_pos = g_player.pos;
 		// ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^		update end		^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -671,6 +761,12 @@ int main()
 			s_m4 light_projection = make_orthographic(
 				-c_tiles_x * 0.6f * c_tile_size, c_tiles_x * 0.6f * c_tile_size, -100, 100, -c_tiles_y * 1.1f * c_tile_size, c_tiles_y * 1.1f * c_tile_size
 			);
+
+
+			for(int i = 0; i < g_sphere_arr.count; i += 1) {
+				s_sphere sphere = g_sphere_arr[i];
+				draw_sphere(&mesh, sphere, 1.5f);
+			}
 
 			// vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv		scene to depth start		vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv
 			{
@@ -699,12 +795,27 @@ int main()
 					data.projection = light_projection;
 					SDL_PushGPUVertexUniformData(cmdbuf, 0, &data, sizeof(data));
 				}
-				// {
-				// 	s_fragment_uniform_data data = zero;
-				// 	data.cam_pos = cam_pos;
-				// 	SDL_PushGPUFragmentUniformData(cmdbuf, 0, &data, sizeof(data));
-				// }
 				SDL_DrawGPUPrimitives(render_pass, c_vertex_count, 1, 0, 0);
+
+				if(g_triangle_count > 0) {
+					SDL_BindGPUGraphicsPipeline(render_pass, triangle_depth_only_pipeline);
+					{
+						SDL_GPUBufferBinding binding = zero;
+						binding.buffer = triangle_vertex_buffer;
+						upload_to_gpu_buffer(g_triangle_arr, sizeof(s_triangle) * g_triangle_count, triangle_vertex_buffer, triangle_transfer_buffer);
+						SDL_BindGPUVertexBuffers(render_pass, 0, &binding, 1);
+					}
+					{
+						s_vertex_uniform_data1 data = zero;
+						data.view = light_view;
+						data.projection = light_projection;
+						data.light_view = light_view;
+						data.light_projection = light_projection;
+						SDL_PushGPUVertexUniformData(cmdbuf, 0, &data, sizeof(data));
+					}
+					SDL_DrawGPUPrimitives(render_pass, 3, g_triangle_count, 0, 0);
+				}
+
 				SDL_EndGPURenderPass(render_pass);
 			}
 			// ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^		scene to depth end		^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -843,7 +954,62 @@ int main()
 					g_circle_count = 0;
 				}
 				// ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^		circle end		^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+				// vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv		triangle start		vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv
+				if(g_triangle_count > 0) {
+					SDL_GPUColorTargetInfo color_target_info = { 0 };
+					color_target_info.texture = swapchain_texture;
+					color_target_info.load_op = SDL_GPU_LOADOP_LOAD;
+					color_target_info.store_op = SDL_GPU_STOREOP_STORE;
+
+					SDL_GPUDepthStencilTargetInfo depth_stencil_target_info = zero;
+					depth_stencil_target_info.texture = scene_depth_texture;
+					depth_stencil_target_info.cycle = false;
+					depth_stencil_target_info.clear_depth = 1;
+					depth_stencil_target_info.load_op = SDL_GPU_LOADOP_LOAD;
+					depth_stencil_target_info.store_op = SDL_GPU_STOREOP_STORE;
+					depth_stencil_target_info.stencil_load_op = SDL_GPU_LOADOP_DONT_CARE;
+					depth_stencil_target_info.stencil_store_op = SDL_GPU_STOREOP_DONT_CARE;
+
+					SDL_GPURenderPass* render_pass = SDL_BeginGPURenderPass(cmdbuf, &color_target_info, 1, &depth_stencil_target_info);
+					SDL_BindGPUGraphicsPipeline(render_pass, triangle_pipeline);
+					{
+						SDL_GPUBufferBinding binding = zero;
+						binding.buffer = triangle_vertex_buffer;
+						upload_to_gpu_buffer(g_triangle_arr, sizeof(s_triangle) * g_triangle_count, triangle_vertex_buffer, triangle_transfer_buffer);
+						SDL_BindGPUVertexBuffers(render_pass, 0, &binding, 1);
+					}
+					{
+						s_vertex_uniform_data1 data = zero;
+						if(view_state == e_view_state_shadow_map) {
+							data.view = light_view;
+							data.projection = light_projection;
+						}
+						else {
+							data.view = look_at(cam_pos, cam_pos + cam_front, cam_up);
+							data.projection = make_perspective(90, c_window_width / (float)c_window_height, 0.01f, 500.0f);
+						}
+						data.light_view = light_view;
+						data.light_projection = light_projection;
+						SDL_PushGPUVertexUniformData(cmdbuf, 0, &data, sizeof(data));
+					}
+					{
+						s_fragment_uniform_data data = zero;
+						data.cam_pos = cam_pos;
+						SDL_PushGPUFragmentUniformData(cmdbuf, 0, &data, sizeof(data));
+					}
+					{
+						SDL_GPUTextureSamplerBinding binding = zero;
+						binding.texture = shadow_texture;
+						binding.sampler = shadow_texture_sampler;
+						SDL_BindGPUFragmentSamplers(render_pass, 0, &binding, 1);
+					}
+					SDL_DrawGPUPrimitives(render_pass, 3, g_triangle_count, 0, 0);
+					SDL_EndGPURenderPass(render_pass);
+				}
+				// ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^		triangle end		^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 			}
+			g_triangle_count = 0;
 		}
 
 		SDL_SubmitGPUCommandBuffer(cmdbuf);
@@ -1155,7 +1321,17 @@ func SDL_GPUGraphicsPipeline* create_pipeline(
 	gpu_vertex_buffer_description_arr[0].input_rate = SDL_GPU_VERTEXINPUTRATE_VERTEX;
 	gpu_vertex_buffer_description_arr[1].input_rate = SDL_GPU_VERTEXINPUTRATE_INSTANCE;
 	gpu_vertex_buffer_description_arr[0].slot = 0;
-	gpu_vertex_buffer_description_arr[1].slot = 1;
+	if(vertex_attributes.count <= 0) {
+		gpu_vertex_buffer_description_arr[1].slot = 0;
+	}
+	else {
+		gpu_vertex_buffer_description_arr[1].slot = 1;
+	}
+
+	int first_gpu_vertex_buffer_description = 0;
+	if(vertex_attributes.count <= 0) {
+		first_gpu_vertex_buffer_description = 1;
+	}
 
 	int attribute_count = 0;
 	s_list<SDL_GPUVertexElementFormat, 16>* temp[2] = {&vertex_attributes, &instance_attributes};
@@ -1171,6 +1347,9 @@ func SDL_GPUGraphicsPipeline* create_pipeline(
 			vertex_attribute_arr[attribute_count].buffer_slot = buffer_count;
 
 			switch(temp[i]->data[j]) {
+				case SDL_GPU_VERTEXELEMENTFORMAT_FLOAT2: {
+					pitch += sizeof(float) * 2;
+				} break;
 				case SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3: {
 					pitch += sizeof(float) * 3;
 				} break;
@@ -1187,7 +1366,7 @@ func SDL_GPUGraphicsPipeline* create_pipeline(
 		gpu_vertex_buffer_description_arr[i].pitch = pitch;
 	}
 
-	pipeline_create_info.vertex_input_state.vertex_buffer_descriptions = gpu_vertex_buffer_description_arr;
+	pipeline_create_info.vertex_input_state.vertex_buffer_descriptions = &gpu_vertex_buffer_description_arr[first_gpu_vertex_buffer_description];
 	pipeline_create_info.vertex_input_state.num_vertex_attributes = attribute_count;
 	pipeline_create_info.vertex_input_state.vertex_attributes = vertex_attribute_arr;
 
@@ -1450,6 +1629,19 @@ func void draw_circle(s_v2 pos, float radius, s_v4 color)
 	g_circle_count += 1;
 }
 
+func void draw_triangle(s_v3 v0, s_v3 v1, s_v3 v2, s_v3 offset, s_v2 uv, s_v4 color)
+{
+	s_triangle triangle = zero;
+	triangle.v0 = v0 + offset;
+	triangle.v1 = v1 + offset;
+	triangle.v2 = v2 + offset;
+	triangle.normal = get_triangle_normal(v0, v1, v2);
+	triangle.uv = uv;
+	triangle.color = color;
+	g_triangle_arr[g_triangle_count] = triangle;
+	g_triangle_count += 1;
+}
+
 func s_v3 v3_reflect(s_v3 a, s_v3 b)
 {
 	float dot = v3_dot(a, b) * 2;
@@ -1460,26 +1652,30 @@ func s_v3 v3_reflect(s_v3 a, s_v3 b)
 	return result;
 }
 
-func s_collision_data check_collision(s_player player)
+func s_collision_data check_collision(s_v3 pos, s_box hitbox)
 {
 	s_collision_data result = zero;
 	s_shape a = zero;
-	a.vertices[0] = v3(player.pos.x - c_player_size.x * 0.5f, player.pos.y + c_player_size.y * 0.5f, player.pos.z + c_player_size.z * 0.5f);
-	a.vertices[1] = v3(player.pos.x + c_player_size.x * 0.5f, player.pos.y + c_player_size.y * 0.5f, player.pos.z + c_player_size.z * 0.5f);
-	a.vertices[2] = v3(player.pos.x - c_player_size.x * 0.5f, player.pos.y - c_player_size.y * 0.5f, player.pos.z + c_player_size.z * 0.5f);
-	a.vertices[3] = v3(player.pos.x + c_player_size.x * 0.5f, player.pos.y - c_player_size.y * 0.5f, player.pos.z + c_player_size.z * 0.5f);
-	a.vertices[4] = v3(player.pos.x - c_player_size.x * 0.5f, player.pos.y + c_player_size.y * 0.5f, player.pos.z - c_player_size.z * 0.5f);
-	a.vertices[5] = v3(player.pos.x + c_player_size.x * 0.5f, player.pos.y + c_player_size.y * 0.5f, player.pos.z - c_player_size.z * 0.5f);
-	a.vertices[6] = v3(player.pos.x - c_player_size.x * 0.5f, player.pos.y - c_player_size.y * 0.5f, player.pos.z - c_player_size.z * 0.5f);
-	a.vertices[7] = v3(player.pos.x + c_player_size.x * 0.5f, player.pos.y - c_player_size.y * 0.5f, player.pos.z - c_player_size.z * 0.5f);
+	static_assert(sizeof(a.vertices) >= sizeof(hitbox.vertex_arr));
+	memcpy(a.vertices, hitbox.vertex_arr, sizeof(hitbox.vertex_arr));
+	// a.vertices[0] = v3(pos.x - c_player_size.x * 0.5f, pos.y + c_player_size.y * 0.5f, pos.z + c_player_size.z * 0.5f);
+	// a.vertices[1] = v3(pos.x + c_player_size.x * 0.5f, pos.y + c_player_size.y * 0.5f, pos.z + c_player_size.z * 0.5f);
+	// a.vertices[2] = v3(pos.x - c_player_size.x * 0.5f, pos.y - c_player_size.y * 0.5f, pos.z + c_player_size.z * 0.5f);
+	// a.vertices[3] = v3(pos.x + c_player_size.x * 0.5f, pos.y - c_player_size.y * 0.5f, pos.z + c_player_size.z * 0.5f);
+	// a.vertices[4] = v3(pos.x - c_player_size.x * 0.5f, pos.y + c_player_size.y * 0.5f, pos.z - c_player_size.z * 0.5f);
+	// a.vertices[5] = v3(pos.x + c_player_size.x * 0.5f, pos.y + c_player_size.y * 0.5f, pos.z - c_player_size.z * 0.5f);
+	// a.vertices[6] = v3(pos.x - c_player_size.x * 0.5f, pos.y - c_player_size.y * 0.5f, pos.z - c_player_size.z * 0.5f);
+	// a.vertices[7] = v3(pos.x + c_player_size.x * 0.5f, pos.y - c_player_size.y * 0.5f, pos.z - c_player_size.z * 0.5f);
 	a.vertex_count = 8;
 
-	int player_x = floorfi(player.pos.x / c_tile_size);
-	int player_y = floorfi(player.pos.y / c_tile_size);
+	int player_x = floorfi(pos.x / c_tile_size);
+	int player_y = floorfi(pos.y / c_tile_size);
 	for(int y = -1; y <= 1; y += 1) {
 		int yy = y + player_y;
+		if(yy < 0 || yy >= c_tiles_y) { continue; }
 		for(int x = -1; x < 1; x += 1) {
 			int xx = x + player_x;
+			if(xx < 0 || xx >= c_tiles_x) { continue; }
 			int index = (xx + yy * c_tiles_x) * 6;
 
 			for(int i = 0; i < 2; i += 1) {
@@ -1520,3 +1716,99 @@ t* s_list<t, n>::add(t new_element)
 	return result;
 }
 
+func u8* read_file(char* path)
+{
+	FILE* file = fopen(path, "rb");
+	fseek(file, 0, SEEK_END);
+	int size = ftell(file);
+	fseek(file, 0, SEEK_SET);
+	u8* result = (u8*)malloc(size);
+	fread(result, 1, size, file);
+	fclose(file);
+	return result;
+}
+
+func s_ply_mesh parse_ply_mesh(char* path)
+{
+	char* data = (char*)read_file(path);
+	char* cursor = data;
+	s_ply_mesh result = zero;
+	{
+		char* temp = strstr(cursor, "element vertex ") + 15;
+		result.vertex_count = atoi(temp);
+		assert(result.vertex_count <= 1024);
+	}
+	{
+		char* temp = strstr(cursor, "element face ") + 13;
+		result.face_count = atoi(temp);
+		assert(result.face_count <= 1024);
+	}
+	cursor = strstr(data, "end_header") + 11;
+
+	{
+		s_ply_vertex* temp = (s_ply_vertex*)cursor;
+		for(int i = 0; i < result.vertex_count; i += 1) {
+			result.vertex_arr[i] = *temp;
+			temp += 1;
+		}
+		cursor = (char*)temp;
+	}
+	{
+		s_ply_face* temp = (s_ply_face*)cursor;
+		for(int i = 0; i < result.face_count; i += 1) {
+			result.face_arr[i] = *temp;
+			assert(result.face_arr[i].index_count == 3);
+			temp += 1;
+		}
+	}
+	free(data);
+	return result;
+}
+
+func s_box make_box(s_v3 pos, s_v3 size)
+{
+	s_box result = zero;
+	result.vertex_arr[0].x = -size.x * 0.5f + pos.x;
+	result.vertex_arr[0].y = size.y * 0.5f + pos.y;
+	result.vertex_arr[0].z = size.z * 0.5f + pos.z;
+
+	result.vertex_arr[1].x = size.x * 0.5f + pos.x;
+	result.vertex_arr[1].y = size.y * 0.5f + pos.y;
+	result.vertex_arr[1].z = size.z * 0.5f + pos.z;
+
+	result.vertex_arr[2].x = size.x * 0.5f + pos.x;
+	result.vertex_arr[2].y = -size.y * 0.5f + pos.y;
+	result.vertex_arr[2].z = size.z * 0.5f + pos.z;
+
+	result.vertex_arr[3].x = -size.x * 0.5f + pos.x;
+	result.vertex_arr[3].y = -size.y * 0.5f + pos.y;
+	result.vertex_arr[3].z = size.z * 0.5f + pos.z;
+
+	result.vertex_arr[4].x = -size.x * 0.5f + pos.x;
+	result.vertex_arr[4].y = size.y * 0.5f + pos.y;
+	result.vertex_arr[4].z = -size.z * 0.5f + pos.z;
+
+	result.vertex_arr[5].x = size.x * 0.5f + pos.x;
+	result.vertex_arr[5].y = size.y * 0.5f + pos.y;
+	result.vertex_arr[5].z = -size.z * 0.5f + pos.z;
+
+	result.vertex_arr[6].x = size.x * 0.5f + pos.x;
+	result.vertex_arr[6].y = -size.y * 0.5f + pos.y;
+	result.vertex_arr[6].z = -size.z * 0.5f + pos.z;
+
+	result.vertex_arr[7].x = -size.x * 0.5f + pos.x;
+	result.vertex_arr[7].y = -size.y * 0.5f + pos.y;
+	result.vertex_arr[7].z = -size.z * 0.5f + pos.z;
+
+	return result;
+}
+
+func void draw_sphere(s_ply_mesh* mesh, s_sphere sphere, float scale)
+{
+	for(int j = 0; j < mesh->face_count; j += 1) {
+		s_ply_vertex v0 = mesh->vertex_arr[mesh->face_arr[j].index_arr[0]];
+		s_ply_vertex v1 = mesh->vertex_arr[mesh->face_arr[j].index_arr[1]];
+		s_ply_vertex v2 = mesh->vertex_arr[mesh->face_arr[j].index_arr[2]];
+		draw_triangle(v0.pos * scale, v1.pos * scale, v2.pos * scale, sphere.pos, v0.uv, make_color(0.5f, 1, 0.5f));
+	}
+}

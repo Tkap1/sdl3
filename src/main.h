@@ -1,7 +1,7 @@
 
 #define array_count(arr) (sizeof((arr)) / sizeof((arr)[0]))
 #define invalid_default_case default: { assert(false); }
-#define assert(condition) if(!(condition)) { printf("FUCK\n"); exit(1); }
+#define assert(condition) if(!(condition)) { printf("Failed assert %s(%i)\n", __FILE__, __LINE__); exit(1); }
 
 union s_m4
 {
@@ -52,6 +52,7 @@ struct s_vertex
 
 struct s_sphere
 {
+	float spawn_timestamp;
 	s_v3 pos;
 	s_v3 vel;
 };
@@ -69,6 +70,39 @@ struct s_circle
 {
 	s_m4 model;
 	s_v4 color;
+};
+
+struct s_triangle
+{
+	s_v3 v0;
+	s_v3 v1;
+	s_v3 v2;
+	s_v3 normal;
+	s_v2 uv;
+	s_v4 color;
+};
+
+#pragma pack(push, 1)
+struct s_ply_vertex
+{
+	s_v3 pos;
+	s_v3 normal;
+	s_v2 uv;
+};
+
+struct s_ply_face
+{
+	s8 index_count;
+	int index_arr[3];
+};
+#pragma pack(pop)
+
+struct s_ply_mesh
+{
+	int vertex_count;
+	int face_count;
+	s_ply_vertex vertex_arr[1024];
+	s_ply_face face_arr[1024];
 };
 
 struct s_vertex_uniform_data0
@@ -93,6 +127,7 @@ struct s_fragment_uniform_data
 
 struct s_player
 {
+	float want_to_shoot_timestamp;
 	float want_to_jump_timestamp;
 	b8 on_ground;
 	s_v3 pos;
@@ -109,6 +144,11 @@ struct s_collision_data
 {
 	b8 collides;
 	s_v3 vertices[3];
+};
+
+struct s_box
+{
+	s_v3 vertex_arr[8];
 };
 
 struct s_speed_buff
@@ -238,4 +278,9 @@ func s_v4 make_color(float r, float a);
 func float min(float a, float b);
 func int floorfi(float x);
 func s_v3 v3_reflect(s_v3 a, s_v3 b);
-func s_collision_data check_collision(s_player player);
+func s_collision_data check_collision(s_v3 pos, s_box hitbox);
+func u8* read_file(char* path);
+func s_ply_mesh parse_ply_mesh(char* path);
+func void draw_triangle(s_v3 v0, s_v3 v1, s_v3 v2, s_v3 offset, s_v2 uv, s_v4 color);
+func s_box make_box(s_v3 pos, s_v3 size);
+func void draw_sphere(s_ply_mesh* mesh, s_sphere sphere, float scale);
