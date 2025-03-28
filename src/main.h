@@ -107,16 +107,6 @@ struct s_list
 	t* add(t new_element);
 };
 
-struct s_triangle
-{
-	s_v3 v0;
-	s_v3 v1;
-	s_v3 v2;
-	s_v3 normal;
-	s_v2 uv;
-	s_v4 color;
-};
-
 #pragma pack(push, 1)
 struct s_ply_vertex
 {
