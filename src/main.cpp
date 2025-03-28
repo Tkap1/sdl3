@@ -609,51 +609,11 @@ int main()
 				s_v3 gravity = v3(0, 0, -0.006);
 				g_player.vel += gravity;
 
-				// {
-				// 	constexpr float c_max_input_mag = 0.25f;
-				// 	s_v3 wanted = player_wanted_dir * player_wanted_speed;
-				// 	float wanted_length = v3_length(wanted);
-				// 	s_v3 curr = v3(g_player.vel.x, g_player.vel.y, 0);
-				// 	float curr_length = v3_length(curr);
-				// 	s_v3 combined = curr + wanted;
-				// 	float combined_length = v3_length(combined);
-				// 	// float can0 = max(0.0f, c_max_input_mag - curr_length);
-				// 	if(combined_length <= curr_length) {
-				// 		g_player.vel.x += wanted.x;
-				// 		g_player.vel.y += wanted.y;
-				// 	}
-				// 	else {
-				// 		float can1 = clamp(c_max_input_mag - combined_length, 0.0f, wanted_length);
-				// 		s_v3 temp3 = v3_set_mag(wanted, can1);
-				// 		g_player.vel.x += temp3.x;
-				// 		g_player.vel.y += temp3.y;
-				// 	}
-
-				// 	// float input_mag = v3_length(temp);
-				// 	// float player_curr_mag = v3_length(v3(player.vel.x, player.vel.y, 0.0f));
-				// 	// float max_mag_from_input = clamp(0.15f - player_curr_mag, 0.0f, input_mag);
-				// 	// temp = v3_set_mag(temp, max_mag_from_input);
-				// 	// // printf("%f, %f\n", temp.x, temp.y);
-				// 	// // printf("%f\n", max_mag_from_input);
-				// 	// player.vel.x += temp.x;
-				// 	// player.vel.y += temp.y;
-				// }
-
 				if(g_time - g_player.want_to_jump_timestamp < 0.1f) {
 					g_player.vel.z = 0.5f;
 				}
-				// g_player.pos += g_player.vel;
-				// if(g_player.on_ground) {
-				// 	g_player.vel.x *= 0.75f;
-				// 	g_player.vel.y *= 0.75f;
-				// }
 
 				s_v3 movement = g_player.vel + player_wanted_dir * player_wanted_speed;
-				// printf("%f, %f, %f\n", movement.x, movement.y, movement.z);
-				// g_player.pos += movement;
-
-				// s_collision_data collision_data = check_collision(g_player);
-				// g_player.pos -= movement;
 				s_v3 new_vel = g_player.vel;
 				b8 z_modified = false;
 				for(int i = 0; i < 3; i += 1) {
@@ -674,16 +634,10 @@ int main()
 								dot = clamp(dot, 0.0f, 1.0f);
 								b8 is_slope = dot > 0.2f;
 								if(is_slope) {
-									// s_v3 reflect = v3_reflect(movement, normal) * 10;
 									s_v3 n = v3(normal.x * -1, normal.y * -1, normal.z);
 									s_v3 reflect = n;
-									// reflect.x = 0;
-									// reflect.y = 0;
 									new_vel = reflect * (1 - dot);
 									z_modified = true;
-									// printf("vel: %f, %f, %f\n", movement.x, movement.y, movement.z);
-									// printf("reflect: %f, %f, %f\n", reflect.x, reflect.y, reflect.z);
-
 								}
 							}
 							if(i == 2) {
@@ -698,18 +652,6 @@ int main()
 				g_player.vel = new_vel;
 				g_player.vel.x *= 0.8f;
 				g_player.vel.y *= 0.8f;
-
-				// if(collision_data.collides) {
-				// 	float highest_z = get_triangle_height_at_xy(collision_data.vertices[0], collision_data.vertices[1], collision_data.vertices[2], g_player.pos.xy);
-				// 	g_player.pos.z = highest_z + c_player_size.z * 0.5f;
-				// 	s_v3 normal = get_triangle_normal(collision_data.vertices[0], collision_data.vertices[1], collision_data.vertices[2]);
-				// 	if(normal.z > 0.0f) {
-				// 		g_player.on_ground = true;
-				// 	}
-				// 	if(g_player.on_ground) {
-				// 		g_player.vel.z = 0;
-				// 	}
-				// }
 			}
 
 			for(int i = 0; i < g_sphere_arr.count; i += 1) {
@@ -754,6 +696,21 @@ int main()
 
 		if(swapchain_texture != null) {
 
+			SDL_GPUDepthStencilTargetInfo base_depth_stencil_target_info = zero;
+			// base_depth_stencil_target_info.texture = shadow_texture;
+			base_depth_stencil_target_info.cycle = true;
+			base_depth_stencil_target_info.clear_depth = 1;
+			// base_depth_stencil_target_info.load_op = SDL_GPU_LOADOP_CLEAR;
+			base_depth_stencil_target_info.store_op = SDL_GPU_STOREOP_STORE;
+			base_depth_stencil_target_info.stencil_load_op = SDL_GPU_LOADOP_DONT_CARE;
+			base_depth_stencil_target_info.stencil_store_op = SDL_GPU_STOREOP_DONT_CARE;
+
+			SDL_GPUColorTargetInfo base_color_target_info = zero;
+			// base_color_target_info.texture = swapchain_texture;
+			base_color_target_info.clear_color = {0.2f, 0.2f, 0.3f, 1.0f};
+			// base_color_target_info.load_op = SDL_GPU_LOADOP_CLEAR;
+			base_color_target_info.store_op = SDL_GPU_STOREOP_STORE;
+
 			s_v3 sun_pos = v3(-1, c_tiles_y * c_tile_size / 2, 10);
 			s_v3 sun_dir = v3_normalized(v3(1, 0, -0.1f));
 
@@ -770,14 +727,9 @@ int main()
 
 			// vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv		scene to depth start		vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv
 			{
-				SDL_GPUDepthStencilTargetInfo depth_stencil_target_info = zero;
+				SDL_GPUDepthStencilTargetInfo depth_stencil_target_info = base_depth_stencil_target_info;
 				depth_stencil_target_info.texture = shadow_texture;
-				depth_stencil_target_info.cycle = true;
-				depth_stencil_target_info.clear_depth = 1;
 				depth_stencil_target_info.load_op = SDL_GPU_LOADOP_CLEAR;
-				depth_stencil_target_info.store_op = SDL_GPU_STOREOP_STORE;
-				depth_stencil_target_info.stencil_load_op = SDL_GPU_LOADOP_DONT_CARE;
-				depth_stencil_target_info.stencil_store_op = SDL_GPU_STOREOP_DONT_CARE;
 
 				SDL_GPURenderPass* render_pass = SDL_BeginGPURenderPass(cmdbuf, null, 0, &depth_stencil_target_info);
 				SDL_BindGPUGraphicsPipeline(render_pass, depth_only_pipeline);
@@ -821,44 +773,35 @@ int main()
 			// ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^		scene to depth end		^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 			if(view_state == e_view_state_depth) {
-				SDL_GPUColorTargetInfo color_target_info = { 0 };
-					color_target_info.texture = swapchain_texture;
-					color_target_info.clear_color = { 0.2f, 0.2f, 0.3f, 1.0f };
-					color_target_info.load_op = SDL_GPU_LOADOP_CLEAR;
-					color_target_info.store_op = SDL_GPU_STOREOP_STORE;
+				SDL_GPUColorTargetInfo color_target_info = base_color_target_info;
+				color_target_info.texture = swapchain_texture;
+				color_target_info.load_op = SDL_GPU_LOADOP_CLEAR;
 
-					SDL_GPURenderPass* render_pass = SDL_BeginGPURenderPass(cmdbuf, &color_target_info, 1, null);
-					SDL_BindGPUGraphicsPipeline(render_pass, screen_pipeline);
-					{
-						s_v4 color = v4(1, 1, 1, 1);
-						SDL_PushGPUVertexUniformData(cmdbuf, 0, &color, sizeof(color));
-					}
-					{
-						SDL_GPUTextureSamplerBinding binding = zero;
-						binding.texture = shadow_texture;
-						binding.sampler = shadow_texture_sampler;
-						SDL_BindGPUFragmentSamplers(render_pass, 0, &binding, 1);
-					}
-					SDL_DrawGPUPrimitives(render_pass, 6, 1, 0, 0);
-					SDL_EndGPURenderPass(render_pass);
+				SDL_GPURenderPass* render_pass = SDL_BeginGPURenderPass(cmdbuf, &color_target_info, 1, null);
+				SDL_BindGPUGraphicsPipeline(render_pass, screen_pipeline);
+				{
+					s_v4 color = v4(1, 1, 1, 1);
+					SDL_PushGPUVertexUniformData(cmdbuf, 0, &color, sizeof(color));
+				}
+				{
+					SDL_GPUTextureSamplerBinding binding = zero;
+					binding.texture = shadow_texture;
+					binding.sampler = shadow_texture_sampler;
+					SDL_BindGPUFragmentSamplers(render_pass, 0, &binding, 1);
+				}
+				SDL_DrawGPUPrimitives(render_pass, 6, 1, 0, 0);
+				SDL_EndGPURenderPass(render_pass);
 			}
 			else {
 				// vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv		draw scene start		vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv
 				{
-					SDL_GPUColorTargetInfo color_target_info = { 0 };
+					SDL_GPUColorTargetInfo color_target_info = base_color_target_info;
 					color_target_info.texture = swapchain_texture;
-					color_target_info.clear_color = { 0.2f, 0.2f, 0.3f, 1.0f };
 					color_target_info.load_op = SDL_GPU_LOADOP_CLEAR;
-					color_target_info.store_op = SDL_GPU_STOREOP_STORE;
 
-					SDL_GPUDepthStencilTargetInfo depth_stencil_target_info = zero;
+					SDL_GPUDepthStencilTargetInfo depth_stencil_target_info = base_depth_stencil_target_info;
 					depth_stencil_target_info.texture = scene_depth_texture;
-					depth_stencil_target_info.cycle = true;
-					depth_stencil_target_info.clear_depth = 1;
 					depth_stencil_target_info.load_op = SDL_GPU_LOADOP_CLEAR;
-					depth_stencil_target_info.store_op = SDL_GPU_STOREOP_STORE;
-					depth_stencil_target_info.stencil_load_op = SDL_GPU_LOADOP_DONT_CARE;
-					depth_stencil_target_info.stencil_store_op = SDL_GPU_STOREOP_DONT_CARE;
 
 					SDL_GPURenderPass* render_pass = SDL_BeginGPURenderPass(cmdbuf, &color_target_info, 1, &depth_stencil_target_info);
 					SDL_BindGPUGraphicsPipeline(render_pass, UseWireframeMode ? line_pipeline : fill_pipeline);
@@ -930,10 +873,9 @@ int main()
 
 				// vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv		circle start		vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv
 				if(g_circle_count > 0) {
-					SDL_GPUColorTargetInfo color_target_info = { 0 };
+					SDL_GPUColorTargetInfo color_target_info = base_color_target_info;
 					color_target_info.texture = swapchain_texture;
 					color_target_info.load_op = SDL_GPU_LOADOP_LOAD;
-					color_target_info.store_op = SDL_GPU_STOREOP_STORE;
 
 					SDL_GPURenderPass* render_pass = SDL_BeginGPURenderPass(cmdbuf, &color_target_info, 1, null);
 					SDL_BindGPUGraphicsPipeline(render_pass, circle_pipeline);
@@ -960,16 +902,11 @@ int main()
 					SDL_GPUColorTargetInfo color_target_info = { 0 };
 					color_target_info.texture = swapchain_texture;
 					color_target_info.load_op = SDL_GPU_LOADOP_LOAD;
-					color_target_info.store_op = SDL_GPU_STOREOP_STORE;
 
-					SDL_GPUDepthStencilTargetInfo depth_stencil_target_info = zero;
+					SDL_GPUDepthStencilTargetInfo depth_stencil_target_info = base_depth_stencil_target_info;
 					depth_stencil_target_info.texture = scene_depth_texture;
 					depth_stencil_target_info.cycle = false;
-					depth_stencil_target_info.clear_depth = 1;
 					depth_stencil_target_info.load_op = SDL_GPU_LOADOP_LOAD;
-					depth_stencil_target_info.store_op = SDL_GPU_STOREOP_STORE;
-					depth_stencil_target_info.stencil_load_op = SDL_GPU_LOADOP_DONT_CARE;
-					depth_stencil_target_info.stencil_store_op = SDL_GPU_STOREOP_DONT_CARE;
 
 					SDL_GPURenderPass* render_pass = SDL_BeginGPURenderPass(cmdbuf, &color_target_info, 1, &depth_stencil_target_info);
 					SDL_BindGPUGraphicsPipeline(render_pass, triangle_pipeline);
