@@ -99,12 +99,6 @@ struct s_list
 	t* add(t new_element);
 };
 
-struct s_circle
-{
-	s_m4 model;
-	s_v4 color;
-};
-
 struct s_triangle
 {
 	s_v3 v0;
