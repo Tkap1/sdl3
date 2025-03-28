@@ -12,6 +12,7 @@ union s_m4
 enum e_mesh
 {
 	e_mesh_sphere,
+	e_mesh_terrain,
 	e_mesh_count,
 };
 
@@ -51,19 +52,26 @@ struct s_v3
 
 struct s_v4
 {
-	float x;
-	float y;
-	float z;
+	union {
+		struct {
+			float x;
+			float y;
+			float z;
+		};
+		s_v3 xyz;
+	};
 	float w;
 };
 
+#pragma pack(push, 1)
 struct s_vertex
 {
 	s_v3 pos;
 	s_v3 normal;
-	s_v3 color;
-	float a;
+	s_v4 color;
+	s_v2 uv;
 };
+#pragma pack(pop)
 
 #pragma pack(push, 1)
 struct s_mesh_instance_data
@@ -134,6 +142,13 @@ struct s_vertex_uniform_data0
 {
 	s_m4 view;
 	s_m4 projection;
+};
+
+struct s_linear_arena
+{
+	int capacity;
+	int used;
+	u8* memory;
 };
 
 struct s_vertex_uniform_data1
@@ -307,3 +322,8 @@ func u8* read_file(char* path);
 func s_ply_mesh parse_ply_mesh(char* path);
 func s_box make_box(s_v3 pos, s_v3 size);
 func void draw_mesh(e_mesh mesh_id, s_m4 model, s_v4 color, int flags);
+func void setup_common_mesh_stuff(s_mesh* mesh);
+func void setup_mesh_vertex_buffers(s_mesh* mesh, int buffer_size);
+func s_linear_arena make_arena_from_malloc(int requested_size);
+func u8* arena_alloc(s_linear_arena* arena, int requested_size);
+func void arena_reset(s_linear_arena* arena);

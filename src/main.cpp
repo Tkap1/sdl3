@@ -51,10 +51,13 @@ global s_list<s_sphere, c_max_mesh_instances> g_sphere_arr;
 global s_mesh g_mesh_arr[e_mesh_count];
 global s_mesh_instance_data g_mesh_instance_data[e_mesh_count][c_max_mesh_instances];
 global s_list<s_mesh_instance_data, c_max_mesh_instances> g_mesh_instance_data_arr[e_mesh_count];
+global s_linear_arena g_frame_arena;
 
 int main()
 {
 	SDL_Init(SDL_INIT_VIDEO);
+
+	g_frame_arena = make_arena_from_malloc(1024 * 1024 * 1024);
 
 	g_player.pos.x = 10;
 	g_player.pos.y = 10;
@@ -120,6 +123,7 @@ int main()
 		vertex_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3);
 		vertex_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3);
 		vertex_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4);
+		vertex_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_FLOAT2);
 		s_list<SDL_GPUVertexElementFormat, 16> instance_attributes;
 		instance_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4);
 		instance_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4);
@@ -134,6 +138,7 @@ int main()
 		s_list<SDL_GPUVertexElementFormat, 16> vertex_attributes;
 		vertex_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3);
 		vertex_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3);
+		vertex_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4);
 		vertex_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_FLOAT2);
 		s_list<SDL_GPUVertexElementFormat, 16> instance_attributes;
 		instance_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4);
@@ -150,6 +155,7 @@ int main()
 		s_list<SDL_GPUVertexElementFormat, 16> vertex_attributes;
 		vertex_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3);
 		vertex_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3);
+		vertex_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4);
 		vertex_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_FLOAT2);
 		s_list<SDL_GPUVertexElementFormat, 16> instance_attributes;
 		instance_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4);
@@ -168,6 +174,7 @@ int main()
 		vertex_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3);
 		vertex_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3);
 		vertex_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4);
+		vertex_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_FLOAT2);
 		s_list<SDL_GPUVertexElementFormat, 16> instance_attributes;
 		instance_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4);
 		instance_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4);
@@ -286,50 +293,53 @@ int main()
 
 	// vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv		make meshes start		vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv
 	{
-		s_mesh* mesh = &g_mesh_arr[e_mesh_sphere];
-
 		{
-			SDL_GPUBufferCreateInfo buffer_create_info = zero;
-			buffer_create_info.usage = SDL_GPU_BUFFERUSAGE_VERTEX;
-			buffer_create_info.size = sizeof(s_ply_vertex) * ply_sphere.face_count * 3;
-			mesh->vertex_buffer = SDL_CreateGPUBuffer(g_device, &buffer_create_info);
-		}
+			s_mesh* mesh = &g_mesh_arr[e_mesh_sphere];
+			setup_common_mesh_stuff(mesh);
+			setup_mesh_vertex_buffers(mesh, sizeof(s_vertex) * ply_sphere.face_count * 3);
 
-		{
-			SDL_GPUBufferCreateInfo buffer_create_info = zero;
-			buffer_create_info.usage = SDL_GPU_BUFFERUSAGE_VERTEX;
-			buffer_create_info.size = sizeof(s_mesh_instance_data) * c_max_mesh_instances;
-			mesh->instance_buffer = SDL_CreateGPUBuffer(g_device, &buffer_create_info);
-		}
-
-		{
-			SDL_GPUTransferBufferCreateInfo transfer_create_info = zero;
-			transfer_create_info.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD;
-			transfer_create_info.size = sizeof(s_ply_vertex) * ply_sphere.face_count * 3;
-			mesh->vertex_transfer_buffer = SDL_CreateGPUTransferBuffer(g_device, &transfer_create_info);
-		}
-
-		{
-			SDL_GPUTransferBufferCreateInfo transfer_create_info = zero;
-			transfer_create_info.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD;
-			transfer_create_info.size = sizeof(s_mesh_instance_data) * c_max_mesh_instances;
-			mesh->instance_transfer_buffer = SDL_CreateGPUTransferBuffer(g_device, &transfer_create_info);
-		}
-
-		s_ply_vertex vertex_arr[4096] = zero;
-		for(int i = 0; i < ply_sphere.face_count; i += 1) {
-			s_ply_vertex arr[3] = {
-				ply_sphere.vertex_arr[ply_sphere.face_arr[i].index_arr[0]],
-				ply_sphere.vertex_arr[ply_sphere.face_arr[i].index_arr[1]],
-				ply_sphere.vertex_arr[ply_sphere.face_arr[i].index_arr[2]],
-			};
-			for(int j = 0; j < 3; j += 1) {
-				vertex_arr[mesh->vertex_count] = arr[j];
-				mesh->vertex_count += 1;
-				assert(mesh->vertex_count <= 4096);
+			s_vertex vertex_arr[4096] = zero;
+			for(int i = 0; i < ply_sphere.face_count; i += 1) {
+				s_ply_vertex arr[3] = {
+					ply_sphere.vertex_arr[ply_sphere.face_arr[i].index_arr[0]],
+					ply_sphere.vertex_arr[ply_sphere.face_arr[i].index_arr[1]],
+					ply_sphere.vertex_arr[ply_sphere.face_arr[i].index_arr[2]],
+				};
+				for(int j = 0; j < 3; j += 1) {
+					assert(mesh->vertex_count < 4096);
+					vertex_arr[mesh->vertex_count] = {
+						arr[j].pos, arr[j].normal, make_color(1), arr[j].uv
+					};
+					mesh->vertex_count += 1;
+				}
 			}
+			upload_to_gpu_buffer(vertex_arr, sizeof(s_vertex) * mesh->vertex_count, mesh->vertex_buffer, mesh->vertex_transfer_buffer);
 		}
-		upload_to_gpu_buffer(vertex_arr, sizeof(s_ply_vertex) * mesh->vertex_count, mesh->vertex_buffer, mesh->vertex_transfer_buffer);
+
+		#if 0
+		{
+			s_mesh* mesh = &g_mesh_arr[e_mesh_terrain];
+			setup_common_mesh_stuff(mesh);
+			setup_mesh_vertex_buffers(mesh, sizeof(s_vertex) * c_vertex_count);
+
+			s_vertex vertex_arr[4096] = zero;
+			for(int i = 0; i < ply_sphere.face_count; i += 1) {
+				s_ply_vertex arr[3] = {
+					ply_sphere.vertex_arr[ply_sphere.face_arr[i].index_arr[0]],
+					ply_sphere.vertex_arr[ply_sphere.face_arr[i].index_arr[1]],
+					ply_sphere.vertex_arr[ply_sphere.face_arr[i].index_arr[2]],
+				};
+				for(int j = 0; j < 3; j += 1) {
+					assert(mesh->vertex_count < 4096);
+					vertex_arr[mesh->vertex_count] = {
+						arr[j].pos, arr[j].normal, make_color(1), arr[j].uv
+					};
+					mesh->vertex_count += 1;
+				}
+			}
+			upload_to_gpu_buffer(vertex_arr, sizeof(s_vertex) * mesh->vertex_count, mesh->vertex_buffer, mesh->vertex_transfer_buffer);
+		}
+		#endif
 	}
 	// ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^		make meshes end		^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
@@ -492,7 +502,7 @@ int main()
 						float z_arr[6] = zero;
 						float height_arr[6] = zero;
 						float height_scale_arr[6] = zero;
-						s_v3 color_arr[6] = zero;
+						s_v4 color_arr[6] = zero;
 						x_arr[0] = xx;
 						x_arr[1] = xx + 1;
 						x_arr[2] = xx + 1;
@@ -525,11 +535,11 @@ int main()
 							}
 							float height = 0;
 							float height_scale = 0;
-							s_v3 color = v3(0, 0, 0);
+							s_v4 color = v4(0, 0, 0, 1);
 							for(int j = 0; j < c_biome_count; j += 1) {
 								height += p_arr[j] / total_p * fnlGetNoise2D(&noise_arr[j], x_arr[i], y_arr[i]);
 								height_scale += p_arr[j] / total_p * scale_arr[j];
-								color += biome_color_arr[j] * (p_arr[j] / total_p);
+								color.xyz += biome_color_arr[j] * (p_arr[j] / total_p);
 							}
 							height_arr[i] = height;
 							height_scale_arr[i] = height_scale;
@@ -558,7 +568,7 @@ int main()
 						normal_arr[1] = get_triangle_normal(v3(x_arr[3], y_arr[3], z_arr[3]), v3(x_arr[4], y_arr[4], z_arr[4]), v3(x_arr[5], y_arr[5], z_arr[5]));
 
 						for(int i = 0; i < 6; i += 1) {
-							transfer_data[count] = {v3(x_arr[i], y_arr[i], height_arr[i] * height_scale_arr[i]), normal_arr[i / 3], color_arr[i], 1};
+							transfer_data[count] = {v3(x_arr[i], y_arr[i], height_arr[i] * height_scale_arr[i]), normal_arr[i / 3], color_arr[i], v2(0, 0)};
 							count += 1;
 						}
 					}
@@ -566,7 +576,7 @@ int main()
 
 				// vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv		smooth shading start		vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv
 				{
-					s_v3* sum_normal_arr = (s_v3*)calloc(1, sizeof(s_v3) * c_vertex_count);
+					s_v3* sum_normal_arr = (s_v3*)arena_alloc(&g_frame_arena, sizeof(s_v3) * c_vertex_count);
 					for(int i = 0; i < c_vertex_count; i += 1) {
 						int x = floorfi(transfer_data[i].pos.x / c_tile_size);
 						int y = floorfi(transfer_data[i].pos.y / c_tile_size);
@@ -577,7 +587,6 @@ int main()
 						int y = floorfi(transfer_data[i].pos.y / c_tile_size);
 						transfer_data[i].normal = v3_normalized(sum_normal_arr[x + y * c_tiles_x]);
 					}
-					free(sum_normal_arr);
 				}
 				// ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^		smooth shading end		^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 			}
@@ -959,6 +968,8 @@ int main()
 		}
 
 		// ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^		draw end		^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+		arena_reset(&g_frame_arena);
 	}
 	// ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^		loop end		^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
@@ -1647,7 +1658,7 @@ func u8* read_file(char* path)
 	fseek(file, 0, SEEK_END);
 	int size = ftell(file);
 	fseek(file, 0, SEEK_SET);
-	u8* result = (u8*)malloc(size);
+	u8* result = arena_alloc(&g_frame_arena, size);
 	fread(result, 1, size, file);
 	fclose(file);
 	return result;
@@ -1686,7 +1697,6 @@ func s_ply_mesh parse_ply_mesh(char* path)
 			temp += 1;
 		}
 	}
-	free(data);
 	return result;
 }
 
@@ -1735,4 +1745,63 @@ func void draw_mesh(e_mesh mesh_id, s_m4 model, s_v4 color, int flags)
 	data.color = color;
 	data.flags = flags;
 	g_mesh_instance_data_arr[mesh_id].add(data);
+}
+
+func void setup_common_mesh_stuff(s_mesh* mesh)
+{
+	{
+		SDL_GPUBufferCreateInfo buffer_create_info = zero;
+		buffer_create_info.usage = SDL_GPU_BUFFERUSAGE_VERTEX;
+		buffer_create_info.size = sizeof(s_mesh_instance_data) * c_max_mesh_instances;
+		mesh->instance_buffer = SDL_CreateGPUBuffer(g_device, &buffer_create_info);
+	}
+
+	{
+		SDL_GPUTransferBufferCreateInfo transfer_create_info = zero;
+		transfer_create_info.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD;
+		transfer_create_info.size = sizeof(s_mesh_instance_data) * c_max_mesh_instances;
+		mesh->instance_transfer_buffer = SDL_CreateGPUTransferBuffer(g_device, &transfer_create_info);
+	}
+}
+
+func void setup_mesh_vertex_buffers(s_mesh* mesh, int buffer_size)
+{
+	{
+		SDL_GPUBufferCreateInfo buffer_create_info = zero;
+		buffer_create_info.usage = SDL_GPU_BUFFERUSAGE_VERTEX;
+		buffer_create_info.size = buffer_size;
+		mesh->vertex_buffer = SDL_CreateGPUBuffer(g_device, &buffer_create_info);
+	}
+
+	{
+		SDL_GPUTransferBufferCreateInfo transfer_create_info = zero;
+		transfer_create_info.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD;
+		transfer_create_info.size = buffer_size;
+		mesh->vertex_transfer_buffer = SDL_CreateGPUTransferBuffer(g_device, &transfer_create_info);
+	}
+}
+
+func s_linear_arena make_arena_from_malloc(int requested_size)
+{
+	assert(requested_size > 0);
+	int size = (requested_size + 7) & ~7;
+	s_linear_arena result = zero;
+	result.capacity = size;
+	result.memory = (u8*)malloc(size);
+	return result;
+}
+
+func u8* arena_alloc(s_linear_arena* arena, int requested_size)
+{
+	assert(requested_size > 0);
+	int size = (requested_size + 7) & ~7;
+	assert(arena->used + size <= arena->capacity);
+	u8* result = arena->memory;
+	arena->used += size;
+	return result;
+}
+
+func void arena_reset(s_linear_arena* arena)
+{
+	arena->used = 0;
 }
