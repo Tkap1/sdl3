@@ -1,12 +1,27 @@
 
 #define array_count(arr) (sizeof((arr)) / sizeof((arr)[0]))
 #define invalid_default_case default: { assert(false); }
-#define assert(condition) if(!(condition)) { printf("Failed assert %s(%i)\n", __FILE__, __LINE__); exit(1); }
+#define assert(condition) if(!(condition)) { printf("Failed assert %s(%i)\n", __FILE__, __LINE__); __debugbreak(); }
 
 union s_m4
 {
 	float all[16];
 	float all2[4][4];
+};
+
+enum e_mesh
+{
+	e_mesh_sphere,
+	e_mesh_count,
+};
+
+struct s_mesh
+{
+	int vertex_count;
+	SDL_GPUBuffer* vertex_buffer;
+	SDL_GPUBuffer* instance_buffer;
+	SDL_GPUTransferBuffer* vertex_transfer_buffer;
+	SDL_GPUTransferBuffer* instance_transfer_buffer;
 };
 
 enum e_view_state
@@ -49,6 +64,16 @@ struct s_vertex
 	s_v3 color;
 	float a;
 };
+
+#pragma pack(push, 1)
+struct s_mesh_instance_data
+{
+	s_v4 color;
+	int flags;
+	s_m4 model;
+};
+#pragma pack(pop)
+
 
 struct s_sphere
 {
@@ -272,7 +297,6 @@ func void upload_to_gpu_buffer(void* data, int data_size, SDL_GPUBuffer* vertex_
 func s_m4 m4_scale(s_v3 v);
 func s_m4 m4_multiply(s_m4 a, s_m4 b);
 func s_m4 m4_translate(s_v3 v);
-func void draw_circle(s_v2 pos, float radius, s_v4 color);
 func s_v4 make_color(float r, float g, float b);
 func s_v4 make_color(float r, float a);
 func float min(float a, float b);
@@ -281,6 +305,5 @@ func s_v3 v3_reflect(s_v3 a, s_v3 b);
 func s_collision_data check_collision(s_v3 pos, s_box hitbox);
 func u8* read_file(char* path);
 func s_ply_mesh parse_ply_mesh(char* path);
-func void draw_triangle(s_v3 v0, s_v3 v1, s_v3 v2, s_v3 offset, s_v2 uv, s_v4 color);
 func s_box make_box(s_v3 pos, s_v3 size);
-func void draw_sphere(s_ply_mesh* mesh, s_sphere sphere, float scale);
+func void draw_mesh(e_mesh mesh_id, s_m4 model, s_v4 color, int flags);

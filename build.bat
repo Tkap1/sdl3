@@ -10,6 +10,7 @@ glslc.exe assets/depth_only.frag -o assets/depth_only.frag.spv
 glslc.exe assets/circle.vert -o assets/circle.vert.spv
 glslc.exe assets/circle.frag -o assets/circle.frag.spv
 glslc.exe assets/triangle.vert -o assets/triangle.vert.spv
+glslc.exe assets/mesh.vert -o assets/mesh.vert.spv
 
 mkdir build 2> NUL
 

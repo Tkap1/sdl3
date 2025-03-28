@@ -19,19 +19,13 @@
 global char* BasePath = "";
 global SDL_GPUGraphicsPipeline* fill_pipeline;
 global SDL_GPUGraphicsPipeline* line_pipeline;
-global SDL_GPUGraphicsPipeline* triangle_pipeline;
 global SDL_GPUGraphicsPipeline* screen_pipeline;
 global SDL_GPUGraphicsPipeline* depth_only_pipeline;
-global SDL_GPUGraphicsPipeline* triangle_depth_only_pipeline;
 global SDL_GPUGraphicsPipeline* circle_pipeline;
 global SDL_GPUTexture* scene_depth_texture;
 global SDL_GPUTexture* shadow_texture;
 global SDL_GPUSampler* shadow_texture_sampler;
 global b8 UseWireframeMode = false;
-global SDL_GPUBuffer* VertexBuffer;
-global SDL_GPUBuffer* VertexBuffer2;
-global SDL_GPUBuffer* circle_vertex_buffer;
-global SDL_GPUBuffer* triangle_vertex_buffer;
 global constexpr int c_tiles_x = 512;
 global constexpr int c_tiles_y = 512;
 global constexpr int c_vertex_count = c_tiles_x * c_tiles_y * 6;
@@ -49,17 +43,14 @@ global s_vertex* transfer_data;
 global SDL_GPUDevice* g_device;
 global SDL_Window* g_window;
 global SDL_GPUTextureFormat g_depth_texture_format = SDL_GPU_TEXTUREFORMAT_INVALID;
-global constexpr int c_max_circles = 1024;
-global constexpr int c_max_triangles = 65536;
-global s_circle g_circle_arr[c_max_circles];
-global s_triangle g_triangle_arr[c_max_triangles];
-global int g_circle_count = 0;
-global int g_triangle_count = 0;
 global s_speed_buff g_speed_buff;
 global float g_last_speed_time = 0;
 global constexpr s_v3 c_player_size = v3(0.1f, 0.1f, 6.0f);
 global constexpr int c_max_mesh_instances = 1024;
-global s_list<s_sphere, 32> g_sphere_arr;
+global s_list<s_sphere, c_max_mesh_instances> g_sphere_arr;
+global s_mesh g_mesh_arr[e_mesh_count];
+global s_mesh_instance_data g_mesh_instance_data[e_mesh_count][c_max_mesh_instances];
+global s_list<s_mesh_instance_data, c_max_mesh_instances> g_mesh_instance_data_arr[e_mesh_count];
 
 int main()
 {
@@ -69,7 +60,7 @@ int main()
 	g_player.pos.y = 10;
 	g_player.pos.z = 20;
 
-	s_ply_mesh mesh = parse_ply_mesh("assets/sphere.ply");
+	s_ply_mesh ply_sphere = parse_ply_mesh("assets/sphere.ply");
 
 	g_device = SDL_CreateGPUDevice(
 		SDL_GPU_SHADERFORMAT_SPIRV,
@@ -119,10 +110,10 @@ int main()
 	SDL_GPUShader* depth_only_vertex_shader = load_shader("depth_only.vert", 0, 1, 0, 0);
 	SDL_GPUShader* depth_only_fragment_shader = load_shader("depth_only.frag", 0, 0, 0, 0);
 
-	SDL_GPUShader* circle_vertex_shader = load_shader("circle.vert", 0, 1, 0, 0);
-	SDL_GPUShader* circle_fragment_shader = load_shader("circle.frag", 0, 0, 0, 0);
+	// SDL_GPUShader* circle_vertex_shader = load_shader("circle.vert", 0, 1, 0, 0);
+	// SDL_GPUShader* circle_fragment_shader = load_shader("circle.frag", 0, 0, 0, 0);
 
-	SDL_GPUShader* triangle_vertex_shader = load_shader("triangle.vert", 0, 1, 0, 0);
+	SDL_GPUShader* mesh_vertex_shader = load_shader("mesh.vert", 0, 1, 0, 0);
 
 	{
 		s_list<SDL_GPUVertexElementFormat, 16> vertex_attributes;
@@ -138,28 +129,39 @@ int main()
 		line_pipeline = create_pipeline(vertexShader, fragmentShader, SDL_GPU_FILLMODE_LINE, 1, vertex_attributes, instance_attributes, true);
 	}
 
+	SDL_GPUGraphicsPipeline* mesh_pipeline = null;
 	{
+		s_list<SDL_GPUVertexElementFormat, 16> vertex_attributes;
+		vertex_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3);
+		vertex_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3);
+		vertex_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_FLOAT2);
 		s_list<SDL_GPUVertexElementFormat, 16> instance_attributes;
-		instance_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3);
-		instance_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3);
-		instance_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3);
-		instance_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3);
-		instance_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_FLOAT2);
 		instance_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4);
-		triangle_pipeline = create_pipeline(triangle_vertex_shader, fragmentShader, SDL_GPU_FILLMODE_FILL, 1, zero, instance_attributes, true);
+		instance_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_INT);
+		instance_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4);
+		instance_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4);
+		instance_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4);
+		instance_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4);
+		mesh_pipeline = create_pipeline(mesh_vertex_shader, fragmentShader, SDL_GPU_FILLMODE_FILL, 1, vertex_attributes, instance_attributes, true);
+	}
+
+	SDL_GPUGraphicsPipeline* mesh_depth_only_pipeline = null;
+	{
+		s_list<SDL_GPUVertexElementFormat, 16> vertex_attributes;
+		vertex_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3);
+		vertex_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3);
+		vertex_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_FLOAT2);
+		s_list<SDL_GPUVertexElementFormat, 16> instance_attributes;
+		instance_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4);
+		instance_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_INT);
+		instance_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4);
+		instance_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4);
+		instance_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4);
+		instance_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4);
+		mesh_depth_only_pipeline = create_pipeline(mesh_vertex_shader, depth_only_fragment_shader, SDL_GPU_FILLMODE_FILL, 0, vertex_attributes, instance_attributes, true);
 	}
 
 	screen_pipeline = create_pipeline(screen_vertex_shader, screen_fragment_shader, SDL_GPU_FILLMODE_FILL, 1, zero, zero, false);
-
-	{
-		s_list<SDL_GPUVertexElementFormat, 16> instance_attributes;
-		instance_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4);
-		instance_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4);
-		instance_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4);
-		instance_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4);
-		instance_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4);
-		circle_pipeline = create_pipeline(circle_vertex_shader, circle_fragment_shader, SDL_GPU_FILLMODE_FILL, 1, zero, instance_attributes, false);
-	}
 
 	{
 		s_list<SDL_GPUVertexElementFormat, 16> vertex_attributes;
@@ -174,17 +176,6 @@ int main()
 		depth_only_pipeline = create_pipeline(depth_only_vertex_shader, depth_only_fragment_shader, SDL_GPU_FILLMODE_FILL, 0, vertex_attributes, instance_attributes, true);
 	}
 
-	{
-		s_list<SDL_GPUVertexElementFormat, 16> instance_attributes;
-		instance_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3);
-		instance_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3);
-		instance_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3);
-		instance_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3);
-		instance_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_FLOAT2);
-		instance_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4);
-		triangle_depth_only_pipeline = create_pipeline(triangle_vertex_shader, depth_only_fragment_shader, SDL_GPU_FILLMODE_FILL, 0, zero, instance_attributes, true);
-	}
-
 	// Clean up shader resources
 	SDL_ReleaseGPUShader(g_device, vertexShader);
 	SDL_ReleaseGPUShader(g_device, fragmentShader);
@@ -192,9 +183,7 @@ int main()
 	SDL_ReleaseGPUShader(g_device, screen_fragment_shader);
 	SDL_ReleaseGPUShader(g_device, depth_only_vertex_shader);
 	SDL_ReleaseGPUShader(g_device, depth_only_fragment_shader);
-	SDL_ReleaseGPUShader(g_device, circle_vertex_shader);
-	SDL_ReleaseGPUShader(g_device, circle_fragment_shader);
-	SDL_ReleaseGPUShader(g_device, triangle_vertex_shader);
+	SDL_ReleaseGPUShader(g_device, mesh_vertex_shader);
 
 
 	{
@@ -252,32 +241,20 @@ int main()
 		shadow_texture_sampler = SDL_CreateGPUSampler(g_device, &info);
 	}
 
+	SDL_GPUBuffer* vertex_buffer = null;
 	{
 		SDL_GPUBufferCreateInfo buffer_create_info = zero;
 		buffer_create_info.usage = SDL_GPU_BUFFERUSAGE_VERTEX;
 		buffer_create_info.size = sizeof(s_vertex) * c_vertex_count;
-		VertexBuffer = SDL_CreateGPUBuffer(g_device, &buffer_create_info);
+		vertex_buffer = SDL_CreateGPUBuffer(g_device, &buffer_create_info);
 	}
 
+	SDL_GPUBuffer* vertex_buffer2 = null;
 	{
 		SDL_GPUBufferCreateInfo buffer_create_info = zero;
 		buffer_create_info.usage = SDL_GPU_BUFFERUSAGE_VERTEX;
 		buffer_create_info.size = sizeof(s_m4) * c_max_mesh_instances;
-		VertexBuffer2 = SDL_CreateGPUBuffer(g_device, &buffer_create_info);
-	}
-
-	{
-		SDL_GPUBufferCreateInfo buffer_create_info = zero;
-		buffer_create_info.usage = SDL_GPU_BUFFERUSAGE_VERTEX;
-		buffer_create_info.size = sizeof(s_circle) * c_max_circles;
-		circle_vertex_buffer = SDL_CreateGPUBuffer(g_device, &buffer_create_info);
-	}
-
-	{
-		SDL_GPUBufferCreateInfo buffer_create_info = zero;
-		buffer_create_info.usage = SDL_GPU_BUFFERUSAGE_VERTEX;
-		buffer_create_info.size = sizeof(s_triangle) * c_max_triangles;
-		triangle_vertex_buffer = SDL_CreateGPUBuffer(g_device, &buffer_create_info);
+		vertex_buffer2 = SDL_CreateGPUBuffer(g_device, &buffer_create_info);
 	}
 
 	s_v3 cam_pos = g_player.pos;
@@ -292,22 +269,6 @@ int main()
 		transfer_buffer = SDL_CreateGPUTransferBuffer(g_device, &transfer_create_info);
 	}
 
-	SDL_GPUTransferBuffer* circle_transfer_buffer = null;
-	{
-		SDL_GPUTransferBufferCreateInfo transfer_create_info = zero;
-		transfer_create_info.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD;
-		transfer_create_info.size = sizeof(s_circle) * c_max_circles;
-		circle_transfer_buffer = SDL_CreateGPUTransferBuffer(g_device, &transfer_create_info);
-	}
-
-	SDL_GPUTransferBuffer* triangle_transfer_buffer = null;
-	{
-		SDL_GPUTransferBufferCreateInfo transfer_create_info = zero;
-		transfer_create_info.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD;
-		transfer_create_info.size = sizeof(s_triangle) * c_max_triangles;
-		triangle_transfer_buffer = SDL_CreateGPUTransferBuffer(g_device, &transfer_create_info);
-	}
-
 	SDL_GPUTransferBuffer* transfer_buffer2 = null;
 	{
 		SDL_GPUTransferBufferCreateInfo transfer_create_info = zero;
@@ -320,8 +281,58 @@ int main()
 	location.transfer_buffer = transfer_buffer;
 
 	SDL_GPUBufferRegion vertex_buffer_region = zero;
-	vertex_buffer_region.buffer = VertexBuffer;
+	vertex_buffer_region.buffer = vertex_buffer;
 	vertex_buffer_region.size = sizeof(s_vertex) * c_vertex_count;
+
+	// vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv		make meshes start		vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv
+	{
+		s_mesh* mesh = &g_mesh_arr[e_mesh_sphere];
+
+		{
+			SDL_GPUBufferCreateInfo buffer_create_info = zero;
+			buffer_create_info.usage = SDL_GPU_BUFFERUSAGE_VERTEX;
+			buffer_create_info.size = sizeof(s_ply_vertex) * ply_sphere.face_count * 3;
+			mesh->vertex_buffer = SDL_CreateGPUBuffer(g_device, &buffer_create_info);
+		}
+
+		{
+			SDL_GPUBufferCreateInfo buffer_create_info = zero;
+			buffer_create_info.usage = SDL_GPU_BUFFERUSAGE_VERTEX;
+			buffer_create_info.size = sizeof(s_mesh_instance_data) * c_max_mesh_instances;
+			mesh->instance_buffer = SDL_CreateGPUBuffer(g_device, &buffer_create_info);
+		}
+
+		{
+			SDL_GPUTransferBufferCreateInfo transfer_create_info = zero;
+			transfer_create_info.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD;
+			transfer_create_info.size = sizeof(s_ply_vertex) * ply_sphere.face_count * 3;
+			mesh->vertex_transfer_buffer = SDL_CreateGPUTransferBuffer(g_device, &transfer_create_info);
+		}
+
+		{
+			SDL_GPUTransferBufferCreateInfo transfer_create_info = zero;
+			transfer_create_info.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD;
+			transfer_create_info.size = sizeof(s_mesh_instance_data) * c_max_mesh_instances;
+			mesh->instance_transfer_buffer = SDL_CreateGPUTransferBuffer(g_device, &transfer_create_info);
+		}
+
+		s_ply_vertex vertex_arr[4096] = zero;
+		for(int i = 0; i < ply_sphere.face_count; i += 1) {
+			s_ply_vertex arr[3] = {
+				ply_sphere.vertex_arr[ply_sphere.face_arr[i].index_arr[0]],
+				ply_sphere.vertex_arr[ply_sphere.face_arr[i].index_arr[1]],
+				ply_sphere.vertex_arr[ply_sphere.face_arr[i].index_arr[2]],
+			};
+			for(int j = 0; j < 3; j += 1) {
+				vertex_arr[mesh->vertex_count] = arr[j];
+				mesh->vertex_count += 1;
+				assert(mesh->vertex_count <= 4096);
+			}
+		}
+		upload_to_gpu_buffer(vertex_arr, sizeof(s_ply_vertex) * mesh->vertex_count, mesh->vertex_buffer, mesh->vertex_transfer_buffer);
+	}
+	// ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^		make meshes end		^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
 
 	b8 generate_terrain = true;
 
@@ -657,7 +668,7 @@ int main()
 			for(int i = 0; i < g_sphere_arr.count; i += 1) {
 				s_sphere* sphere = &g_sphere_arr[i];
 				sphere->vel.z -= 0.005f;
-				constexpr int c_steps = 100;
+				constexpr int c_steps = 25;
 				s_v3 small_movement = sphere->vel / c_steps;
 				for(int j = 0; j < c_steps; j += 1) {
 					sphere->pos += small_movement;
@@ -719,10 +730,11 @@ int main()
 				-c_tiles_x * 0.6f * c_tile_size, c_tiles_x * 0.6f * c_tile_size, -100, 100, -c_tiles_y * 1.1f * c_tile_size, c_tiles_y * 1.1f * c_tile_size
 			);
 
-
 			for(int i = 0; i < g_sphere_arr.count; i += 1) {
 				s_sphere sphere = g_sphere_arr[i];
-				draw_sphere(&mesh, sphere, 1.5f);
+				s_m4 model = m4_translate(sphere.pos);
+				model = m4_multiply(model, m4_scale(v3(1.5f)));
+				draw_mesh(e_mesh_sphere, model, make_color(0.5f, 1.0f, 0.5f), 0);
 			}
 
 			// vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv		scene to depth start		vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv
@@ -735,10 +747,10 @@ int main()
 				SDL_BindGPUGraphicsPipeline(render_pass, depth_only_pipeline);
 				{
 					s_m4 data = m4_identity();
-					upload_to_gpu_buffer(&data, sizeof(data), VertexBuffer2, transfer_buffer2);
+					upload_to_gpu_buffer(&data, sizeof(data), vertex_buffer2, transfer_buffer2);
 					SDL_GPUBufferBinding binding_arr[2] = zero;
-					binding_arr[0].buffer = VertexBuffer;
-					binding_arr[1].buffer = VertexBuffer2;
+					binding_arr[0].buffer = vertex_buffer;
+					binding_arr[1].buffer = vertex_buffer2;
 					SDL_BindGPUVertexBuffers(render_pass, 0, binding_arr, 2);
 				}
 				{
@@ -749,13 +761,19 @@ int main()
 				}
 				SDL_DrawGPUPrimitives(render_pass, c_vertex_count, 1, 0, 0);
 
-				if(g_triangle_count > 0) {
-					SDL_BindGPUGraphicsPipeline(render_pass, triangle_depth_only_pipeline);
+				for(int mesh_i = 0; mesh_i < e_mesh_count; mesh_i += 1) {
+					int instance_count = g_mesh_instance_data_arr[mesh_i].count;
+					if(instance_count <= 0) { continue; }
+					s_mesh* mesh = &g_mesh_arr[mesh_i];
+					s_mesh_instance_data* instance_data = g_mesh_instance_data_arr[mesh_i].data;
+
+					SDL_BindGPUGraphicsPipeline(render_pass, mesh_depth_only_pipeline);
 					{
-						SDL_GPUBufferBinding binding = zero;
-						binding.buffer = triangle_vertex_buffer;
-						upload_to_gpu_buffer(g_triangle_arr, sizeof(s_triangle) * g_triangle_count, triangle_vertex_buffer, triangle_transfer_buffer);
-						SDL_BindGPUVertexBuffers(render_pass, 0, &binding, 1);
+						upload_to_gpu_buffer(instance_data, sizeof(s_mesh_instance_data) * instance_count, mesh->instance_buffer, mesh->instance_transfer_buffer);
+						SDL_GPUBufferBinding binding_arr[2] = zero;
+						binding_arr[0].buffer = mesh->vertex_buffer;
+						binding_arr[1].buffer = mesh->instance_buffer;
+						SDL_BindGPUVertexBuffers(render_pass, 0, binding_arr, 2);
 					}
 					{
 						s_vertex_uniform_data1 data = zero;
@@ -765,7 +783,7 @@ int main()
 						data.light_projection = light_projection;
 						SDL_PushGPUVertexUniformData(cmdbuf, 0, &data, sizeof(data));
 					}
-					SDL_DrawGPUPrimitives(render_pass, 3, g_triangle_count, 0, 0);
+					SDL_DrawGPUPrimitives(render_pass, mesh->vertex_count, instance_count, 0, 0);
 				}
 
 				SDL_EndGPURenderPass(render_pass);
@@ -806,9 +824,12 @@ int main()
 					SDL_GPURenderPass* render_pass = SDL_BeginGPURenderPass(cmdbuf, &color_target_info, 1, &depth_stencil_target_info);
 					SDL_BindGPUGraphicsPipeline(render_pass, UseWireframeMode ? line_pipeline : fill_pipeline);
 					{
-						SDL_GPUBufferBinding binding = zero;
-						binding.buffer = VertexBuffer;
-						SDL_BindGPUVertexBuffers(render_pass, 0, &binding, 1);
+						s_m4 data = m4_identity();
+						upload_to_gpu_buffer(&data, sizeof(data), vertex_buffer2, transfer_buffer2);
+						SDL_GPUBufferBinding binding_arr[2] = zero;
+						binding_arr[0].buffer = vertex_buffer;
+						binding_arr[1].buffer = vertex_buffer2;
+						SDL_BindGPUVertexBuffers(render_pass, 0, binding_arr, 2);
 					}
 					{
 						s_vertex_uniform_data1 data = zero;
@@ -871,34 +892,13 @@ int main()
 					}
 				}
 
-				// vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv		circle start		vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv
-				if(g_circle_count > 0) {
-					SDL_GPUColorTargetInfo color_target_info = base_color_target_info;
-					color_target_info.texture = swapchain_texture;
-					color_target_info.load_op = SDL_GPU_LOADOP_LOAD;
+				// vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv		mesh start		vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv
+				for(int mesh_i = 0; mesh_i < e_mesh_count; mesh_i += 1) {
+					int instance_count = g_mesh_instance_data_arr[mesh_i].count;
+					if(instance_count <= 0) { continue; }
+					s_mesh* mesh = &g_mesh_arr[mesh_i];
+					s_mesh_instance_data* instance_data = g_mesh_instance_data_arr[mesh_i].data;
 
-					SDL_GPURenderPass* render_pass = SDL_BeginGPURenderPass(cmdbuf, &color_target_info, 1, null);
-					SDL_BindGPUGraphicsPipeline(render_pass, circle_pipeline);
-					{
-						SDL_GPUBufferBinding binding = zero;
-						binding.buffer = circle_vertex_buffer;
-						upload_to_gpu_buffer(g_circle_arr, sizeof(s_circle) * g_circle_count, circle_vertex_buffer, circle_transfer_buffer);
-						SDL_BindGPUVertexBuffers(render_pass, 0, &binding, 1);
-					}
-					{
-						s_vertex_uniform_data0 data = zero;
-						data.view = m4_identity();
-						data.projection = make_orthographic(0, c_window_width, c_window_height, 0, 0, 1);
-						SDL_PushGPUVertexUniformData(cmdbuf, 0, &data, sizeof(data));
-					}
-					SDL_DrawGPUPrimitives(render_pass, 6, g_circle_count, 0, 0);
-					SDL_EndGPURenderPass(render_pass);
-					g_circle_count = 0;
-				}
-				// ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^		circle end		^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-				// vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv		triangle start		vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv
-				if(g_triangle_count > 0) {
 					SDL_GPUColorTargetInfo color_target_info = { 0 };
 					color_target_info.texture = swapchain_texture;
 					color_target_info.load_op = SDL_GPU_LOADOP_LOAD;
@@ -909,13 +909,16 @@ int main()
 					depth_stencil_target_info.load_op = SDL_GPU_LOADOP_LOAD;
 
 					SDL_GPURenderPass* render_pass = SDL_BeginGPURenderPass(cmdbuf, &color_target_info, 1, &depth_stencil_target_info);
-					SDL_BindGPUGraphicsPipeline(render_pass, triangle_pipeline);
+					SDL_BindGPUGraphicsPipeline(render_pass, mesh_pipeline);
+
 					{
-						SDL_GPUBufferBinding binding = zero;
-						binding.buffer = triangle_vertex_buffer;
-						upload_to_gpu_buffer(g_triangle_arr, sizeof(s_triangle) * g_triangle_count, triangle_vertex_buffer, triangle_transfer_buffer);
-						SDL_BindGPUVertexBuffers(render_pass, 0, &binding, 1);
+						upload_to_gpu_buffer(instance_data, sizeof(s_mesh_instance_data) * instance_count, mesh->instance_buffer, mesh->instance_transfer_buffer);
+						SDL_GPUBufferBinding binding_arr[2] = zero;
+						binding_arr[0].buffer = mesh->vertex_buffer;
+						binding_arr[1].buffer = mesh->instance_buffer;
+						SDL_BindGPUVertexBuffers(render_pass, 0, binding_arr, 2);
 					}
+
 					{
 						s_vertex_uniform_data1 data = zero;
 						if(view_state == e_view_state_shadow_map) {
@@ -930,26 +933,31 @@ int main()
 						data.light_projection = light_projection;
 						SDL_PushGPUVertexUniformData(cmdbuf, 0, &data, sizeof(data));
 					}
+
 					{
 						s_fragment_uniform_data data = zero;
 						data.cam_pos = cam_pos;
 						SDL_PushGPUFragmentUniformData(cmdbuf, 0, &data, sizeof(data));
 					}
+
 					{
 						SDL_GPUTextureSamplerBinding binding = zero;
 						binding.texture = shadow_texture;
 						binding.sampler = shadow_texture_sampler;
 						SDL_BindGPUFragmentSamplers(render_pass, 0, &binding, 1);
 					}
-					SDL_DrawGPUPrimitives(render_pass, 3, g_triangle_count, 0, 0);
+
+					SDL_DrawGPUPrimitives(render_pass, mesh->vertex_count, instance_count, 0, 0);
 					SDL_EndGPURenderPass(render_pass);
 				}
-				// ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^		triangle end		^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+				// ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^		mesh end		^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 			}
-			g_triangle_count = 0;
+			for(int mesh_i = 0; mesh_i < e_mesh_count; mesh_i += 1) {
+				g_mesh_instance_data_arr[mesh_i].count = 0;
+			}
+			SDL_SubmitGPUCommandBuffer(cmdbuf);
 		}
 
-		SDL_SubmitGPUCommandBuffer(cmdbuf);
 		// ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^		draw end		^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 	}
 	// ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^		loop end		^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -1284,6 +1292,9 @@ func SDL_GPUGraphicsPipeline* create_pipeline(
 			vertex_attribute_arr[attribute_count].buffer_slot = buffer_count;
 
 			switch(temp[i]->data[j]) {
+				case SDL_GPU_VERTEXELEMENTFORMAT_INT: {
+					pitch += sizeof(int);
+				} break;
 				case SDL_GPU_VERTEXELEMENTFORMAT_FLOAT2: {
 					pitch += sizeof(float) * 2;
 				} break;
@@ -1556,29 +1567,6 @@ func s_m4 m4_multiply(s_m4 a, s_m4 b)
 	return result;
 }
 
-func void draw_circle(s_v2 pos, float radius, s_v4 color)
-{
-	s_circle circle = zero;
-	circle.model = m4_translate(v3(pos.x, pos.y, 0));
-	circle.model = m4_multiply(circle.model, m4_scale(v3(radius * 0.5f, radius * 0.5f, 1.0f)));
-	circle.color = color;
-	g_circle_arr[g_circle_count] = circle;
-	g_circle_count += 1;
-}
-
-func void draw_triangle(s_v3 v0, s_v3 v1, s_v3 v2, s_v3 offset, s_v2 uv, s_v4 color)
-{
-	s_triangle triangle = zero;
-	triangle.v0 = v0 + offset;
-	triangle.v1 = v1 + offset;
-	triangle.v2 = v2 + offset;
-	triangle.normal = get_triangle_normal(v0, v1, v2);
-	triangle.uv = uv;
-	triangle.color = color;
-	g_triangle_arr[g_triangle_count] = triangle;
-	g_triangle_count += 1;
-}
-
 func s_v3 v3_reflect(s_v3 a, s_v3 b)
 {
 	float dot = v3_dot(a, b) * 2;
@@ -1740,12 +1728,11 @@ func s_box make_box(s_v3 pos, s_v3 size)
 	return result;
 }
 
-func void draw_sphere(s_ply_mesh* mesh, s_sphere sphere, float scale)
+func void draw_mesh(e_mesh mesh_id, s_m4 model, s_v4 color, int flags)
 {
-	for(int j = 0; j < mesh->face_count; j += 1) {
-		s_ply_vertex v0 = mesh->vertex_arr[mesh->face_arr[j].index_arr[0]];
-		s_ply_vertex v1 = mesh->vertex_arr[mesh->face_arr[j].index_arr[1]];
-		s_ply_vertex v2 = mesh->vertex_arr[mesh->face_arr[j].index_arr[2]];
-		draw_triangle(v0.pos * scale, v1.pos * scale, v2.pos * scale, sphere.pos, v0.uv, make_color(0.5f, 1, 0.5f));
-	}
+	s_mesh_instance_data data = zero;
+	data.model = model;
+	data.color = color;
+	data.flags = flags;
+	g_mesh_instance_data_arr[mesh_id].add(data);
 }
