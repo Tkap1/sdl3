@@ -16,8 +16,7 @@
 #define FNL_IMPL
 #include "FastNoiseLite.h"
 
-global char* BasePath = "";
-global SDL_GPUGraphicsPipeline* screen_pipeline;
+global constexpr char* c_base_path = "";
 global SDL_GPUTexture* scene_depth_texture;
 global SDL_GPUTexture* shadow_texture;
 global SDL_GPUSampler* shadow_texture_sampler;
@@ -91,8 +90,8 @@ int main()
 	// your device does not support any required depth texture format
 	assert(g_depth_texture_format != SDL_GPU_TEXTUREFORMAT_INVALID);
 
-	SDL_GPUShader* fragmentShader = load_shader("PositionColor.frag", 1, 1, 0, 0);
-	if(fragmentShader == null) {
+	SDL_GPUShader* mesh_fragment_shader = load_shader("mesh.frag", 1, 1, 0, 0);
+	if(mesh_fragment_shader == null) {
 		SDL_Log("Failed to create fragment shader!");
 		return -1;
 	}
@@ -119,8 +118,8 @@ int main()
 		instance_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4);
 		instance_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4);
 		instance_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4);
-		mesh_fill_pipeline = create_pipeline(mesh_vertex_shader, fragmentShader, SDL_GPU_FILLMODE_FILL, 1, vertex_attributes, instance_attributes, true);
-		mesh_line_pipeline = create_pipeline(mesh_vertex_shader, fragmentShader, SDL_GPU_FILLMODE_LINE, 1, vertex_attributes, instance_attributes, true);
+		mesh_fill_pipeline = create_pipeline(mesh_vertex_shader, mesh_fragment_shader, SDL_GPU_FILLMODE_FILL, 1, vertex_attributes, instance_attributes, true);
+		mesh_line_pipeline = create_pipeline(mesh_vertex_shader, mesh_fragment_shader, SDL_GPU_FILLMODE_LINE, 1, vertex_attributes, instance_attributes, true);
 	}
 
 	SDL_GPUGraphicsPipeline* mesh_depth_only_pipeline = null;
@@ -140,14 +139,14 @@ int main()
 		mesh_depth_only_pipeline = create_pipeline(mesh_vertex_shader, depth_only_fragment_shader, SDL_GPU_FILLMODE_FILL, 0, vertex_attributes, instance_attributes, true);
 	}
 
-	screen_pipeline = create_pipeline(screen_vertex_shader, screen_fragment_shader, SDL_GPU_FILLMODE_FILL, 1, zero, zero, false);
+	SDL_GPUGraphicsPipeline* screen_pipeline = create_pipeline(screen_vertex_shader, screen_fragment_shader, SDL_GPU_FILLMODE_FILL, 1, zero, zero, false);
 
 	// Clean up shader resources
-	SDL_ReleaseGPUShader(g_device, fragmentShader);
 	SDL_ReleaseGPUShader(g_device, screen_vertex_shader);
 	SDL_ReleaseGPUShader(g_device, screen_fragment_shader);
 	SDL_ReleaseGPUShader(g_device, depth_only_fragment_shader);
 	SDL_ReleaseGPUShader(g_device, mesh_vertex_shader);
+	SDL_ReleaseGPUShader(g_device, mesh_fragment_shader);
 
 	{
 		SDL_GPUTextureCreateInfo info = zero;
@@ -620,7 +619,7 @@ int main()
 				s_sphere sphere = g_sphere_arr[i];
 				s_m4 model = m4_translate(sphere.pos);
 				model = m4_multiply(model, m4_scale(v3(1.5f)));
-				draw_mesh(e_mesh_sphere, model, make_color(0.5f, 1.0f, 0.5f), 0);
+				draw_mesh(e_mesh_sphere, model, make_color(0.5f, 1.0f, 0.5f), e_render_flag_dont_cast_shadows);
 			}
 
 			// vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv		scene to depth start		vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv
@@ -651,6 +650,7 @@ int main()
 						data.projection = light_projection;
 						data.light_view = light_view;
 						data.light_projection = light_projection;
+						data.depth_only = 1;
 						SDL_PushGPUVertexUniformData(cmdbuf, 0, &data, sizeof(data));
 					}
 					SDL_DrawGPUPrimitives(render_pass, mesh->vertex_count, instance_count, 0, 0);
@@ -785,7 +785,7 @@ func SDL_GPUShader* load_shader(
 	const char *entrypoint;
 
 	if(backendFormats & SDL_GPU_SHADERFORMAT_SPIRV) {
-		SDL_snprintf(fullPath, sizeof(fullPath), "%sassets/%s.spv", BasePath, shaderFilename);
+		SDL_snprintf(fullPath, sizeof(fullPath), "%sassets/%s.spv", c_base_path, shaderFilename);
 		format = SDL_GPU_SHADERFORMAT_SPIRV;
 		entrypoint = "main";
 	}

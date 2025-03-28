@@ -1,11 +1,11 @@
 @echo off
 cls
 
-glslc.exe assets/PositionColor.frag -o assets/PositionColor.frag.spv
 glslc.exe assets/screen.vert -o assets/screen.vert.spv
 glslc.exe assets/screen.frag -o assets/screen.frag.spv
 glslc.exe assets/depth_only.frag -o assets/depth_only.frag.spv
 glslc.exe assets/mesh.vert -o assets/mesh.vert.spv
+glslc.exe assets/mesh.frag -o assets/mesh.frag.spv
 
 mkdir build 2> NUL
 

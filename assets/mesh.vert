@@ -18,12 +18,20 @@ layout (set = 1, binding = 0) uniform uniform_block {
 	mat4 projection;
 	mat4 light_view;
 	mat4 light_projection;
+	int depth_only;
 };
 
 void main()
 {
 	vec4 pos = projection * view * model * vec4(vertex, 1.0);
-	gl_Position = pos;
+
+	// if we are on depth-only pass and we don't want to cast a shadow, "discard" this vertex
+	if(depth_only > 0 && bool(flags & 1)) {
+		gl_Position = vec4(0, 0, 100, 0);
+	}
+	else {
+		gl_Position = pos;
+	}
 	v_world_pos = (model * vec4(vertex, 1)).xyz;
 	v_color = vertex_color * instance_color;
 	v_normal = normal;

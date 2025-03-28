@@ -25,6 +25,11 @@ struct s_mesh
 	SDL_GPUTransferBuffer* instance_transfer_buffer;
 };
 
+enum e_render_flag
+{
+	e_render_flag_dont_cast_shadows = 1 << 0,
+};
+
 enum e_view_state
 {
 	e_view_state_default,
@@ -132,12 +137,6 @@ struct s_ply_mesh
 	s_ply_face face_arr[1024];
 };
 
-struct s_vertex_uniform_data0
-{
-	s_m4 view;
-	s_m4 projection;
-};
-
 struct s_linear_arena
 {
 	int capacity;
@@ -151,6 +150,7 @@ struct s_vertex_uniform_data1
 	s_m4 projection;
 	s_m4 light_view;
 	s_m4 light_projection;
+	int depth_only;
 };
 
 
