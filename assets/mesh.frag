@@ -5,6 +5,7 @@ layout (location = 1) in vec3 v_normal;
 layout (location = 2) in vec3 v_world_pos;
 layout (location = 3) in vec4 v_light_frag_pos;
 layout (location = 4) in flat int v_flags;
+layout (location = 5) in vec2 v_uv;
 
 layout (location = 0) out vec4 out_color;
 
