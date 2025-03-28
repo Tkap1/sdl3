@@ -4,6 +4,7 @@ layout (location = 0) in vec4 v_color;
 layout (location = 1) in vec3 v_normal;
 layout (location = 2) in vec3 v_world_pos;
 layout (location = 3) in vec4 v_light_frag_pos;
+layout (location = 4) in flat int v_flags;
 
 layout (location = 0) out vec4 out_color;
 
@@ -48,15 +49,23 @@ void main()
 		specular = light_color * spec * specular_strength * inv_shadow;
 	}
 
-	vec3 color = vec3(0);
-	color = v_color.rgb * (ambient + diffuse);
-	color += specular;
+	vec3 color = v_color.rgb;
+
+	// @Note(tkap, 28/03/2025): Ignore lights
+	if(!bool(v_flags & (1 << 1))) {
+		color *= (ambient + diffuse);
+		color += specular;
+	}
 
 	// vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv		fog start		vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv
 	vec3 fog_color = vec3(0.2, 0.2, 0.3);
 	float cam_dist = distance(cam_pos, v_world_pos);
 	float fog_dt = smoothstep(200, 350, cam_dist);
-	color = mix(color, fog_color, fog_dt);
+
+	// @Note(tkap, 28/03/2025): Ignore fog
+	if(!bool(v_flags & (1 << 2))) {
+		color = mix(color, fog_color, fog_dt);
+	}
 	// ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^		fog end		^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 	// vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv		out of bounds start		vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv

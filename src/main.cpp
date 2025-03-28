@@ -619,7 +619,7 @@ int main()
 				s_sphere sphere = g_sphere_arr[i];
 				s_m4 model = m4_translate(sphere.pos);
 				model = m4_multiply(model, m4_scale(v3(1.5f)));
-				draw_mesh(e_mesh_sphere, model, make_color(0.5f, 1.0f, 0.5f), e_render_flag_dont_cast_shadows);
+				draw_mesh(e_mesh_sphere, model, make_color(0.5f, 1.0f, 0.5f), 0);
 			}
 
 			// vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv		scene to depth start		vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv

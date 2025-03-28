@@ -12,6 +12,7 @@ layout (location = 0) out vec4 v_color;
 layout (location = 1) out vec3 v_normal;
 layout (location = 2) out vec3 v_world_pos;
 layout (location = 3) out vec4 v_light_frag_pos;
+layout (location = 4) out flat int v_flags;
 
 layout (set = 1, binding = 0) uniform uniform_block {
 	mat4 view;
@@ -36,4 +37,5 @@ void main()
 	v_color = vertex_color * instance_color;
 	v_normal = normal;
 	v_light_frag_pos = light_projection * light_view * model * vec4(vertex, 1.0);
+	v_flags = flags;
 }

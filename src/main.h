@@ -25,9 +25,12 @@ struct s_mesh
 	SDL_GPUTransferBuffer* instance_transfer_buffer;
 };
 
+// @Note(tkap, 28/03/2025): If values change, shaders must also change
 enum e_render_flag
 {
 	e_render_flag_dont_cast_shadows = 1 << 0,
+	e_render_flag_ignore_light = 1 << 1,
+	e_render_flag_ignore_fog = 1 << 2,
 };
 
 enum e_view_state
