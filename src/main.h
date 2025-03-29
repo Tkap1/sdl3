@@ -46,6 +46,7 @@ enum e_render_flag
 	e_render_flag_ignore_light = 1 << 1,
 	e_render_flag_ignore_fog = 1 << 2,
 	e_render_flag_screen = 1 << 3,
+	e_render_flag_textured = 1 << 4,
 };
 
 enum e_view_state
@@ -220,6 +221,11 @@ func constexpr s_v3 v3(T v)
 	return {(float)v, (float)v, (float)v};
 }
 
+func constexpr s_v3 v3(s_v2 xy, float z)
+{
+	return {xy.x, xy.y, z};
+}
+
 template <typename A, typename B, typename C>
 func constexpr s_v3 v3(A x, B y, C z)
 {
@@ -332,3 +338,4 @@ func u8* arena_alloc(s_linear_arena* arena, int requested_size);
 func void arena_reset(s_linear_arena* arena);
 func void make_game_mesh_from_ply_mesh(s_mesh* mesh, s_ply_mesh* ply_mesh);
 func s_triangle make_triangle(s_v3 v0, s_v3 v1, s_v3 v2);
+func void draw_screen(s_v2 pos, s_v2 size, s_v4 color);

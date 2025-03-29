@@ -92,7 +92,6 @@ int main()
 	assert(g_depth_texture_format != SDL_GPU_TEXTUREFORMAT_INVALID);
 
 	s_shader_program mesh_shader = zero;
-	s_shader_program screen_shader = zero;
 	s_shader_program depth_only_shader = zero;
 	{
 		s_shader_data data = zero;
@@ -100,12 +99,6 @@ int main()
 		data.uniform_buffer_count[0] = 1;
 		data.uniform_buffer_count[1] = 1;
 		mesh_shader = load_shader("assets/mesh.shader", data);
-	}
-	{
-		s_shader_data data = zero;
-		data.sampler_count[1] = 1;
-		data.uniform_buffer_count[0] = 1;
-		screen_shader = load_shader("assets/screen.shader", data);
 	}
 	{
 		s_shader_data data = zero;
@@ -151,11 +144,8 @@ int main()
 		mesh_depth_only_pipeline = create_pipeline(depth_only_shader, SDL_GPU_FILLMODE_FILL, 0, vertex_attributes, instance_attributes, true);
 	}
 
-	SDL_GPUGraphicsPipeline* screen_pipeline = create_pipeline(screen_shader, SDL_GPU_FILLMODE_FILL, 1, zero, zero, false);
-
 	// Clean up shader resources
 	for(int i = 0; i < 2; i += 1) {
-		SDL_ReleaseGPUShader(g_device, screen_shader.shader_arr[i]);
 		SDL_ReleaseGPUShader(g_device, depth_only_shader.shader_arr[i]);
 		SDL_ReleaseGPUShader(g_device, mesh_shader.shader_arr[i]);
 	}
@@ -219,27 +209,27 @@ int main()
 			vertex_arr[0].pos = v3(-c_size, -c_size, 0.0f);
 			vertex_arr[0].normal = v3(0, -1, 0);
 			vertex_arr[0].color = make_color(0, 1, 0);
-			vertex_arr[0].uv = v2(0, 1);
+			vertex_arr[0].uv = v2(0, 0);
 			vertex_arr[1].pos = v3(c_size, -c_size, 0.0f);
 			vertex_arr[1].normal = v3(0, -1, 0);
 			vertex_arr[1].color = make_color(1);
-			vertex_arr[1].uv = v2(1, 1);
+			vertex_arr[1].uv = v2(1, 0);
 			vertex_arr[2].pos = v3(c_size, c_size, 0.0f);
 			vertex_arr[2].normal = v3(0, -1, 0);
 			vertex_arr[2].color = make_color(1, 0, 0);
-			vertex_arr[2].uv = v2(1, 0);
+			vertex_arr[2].uv = v2(1, 1);
 			vertex_arr[3].pos = v3(-c_size, -c_size, 0.0f);
 			vertex_arr[3].normal = v3(0, -1, 0);
 			vertex_arr[3].color = make_color(1);
-			vertex_arr[3].uv = v2(0, 1);
+			vertex_arr[3].uv = v2(0, 0);
 			vertex_arr[4].pos = v3(c_size, c_size, 0.0f);
 			vertex_arr[4].normal = v3(0, -1, 0);
 			vertex_arr[4].color = make_color(1);
-			vertex_arr[4].uv = v2(1, 0);
+			vertex_arr[4].uv = v2(1, 1);
 			vertex_arr[5].pos = v3(-c_size, c_size, 0.0f);
 			vertex_arr[5].normal = v3(0, -1, 0);
 			vertex_arr[5].color = make_color(1);
-			vertex_arr[5].uv = v2(0, 0);
+			vertex_arr[5].uv = v2(0, 1);
 			upload_to_gpu_buffer(vertex_arr, sizeof(s_vertex) * mesh->vertex_count, mesh->vertex_buffer, mesh->vertex_transfer_buffer);
 		}
 
@@ -716,90 +706,75 @@ int main()
 			// ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^		scene to depth end		^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 			if(view_state == e_view_state_depth) {
+				for(int mesh_i = 0; mesh_i < e_mesh_count; mesh_i += 1) {
+					g_mesh_instance_data_arr[mesh_i].count = 0;
+				}
+				draw_screen(c_half_window_size, c_window_size, make_color(1));
+			}
+
+			// vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv		mesh start		vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv
+			{
 				SDL_GPUColorTargetInfo color_target_info = base_color_target_info;
 				color_target_info.texture = swapchain_texture;
 				color_target_info.load_op = SDL_GPU_LOADOP_CLEAR;
 
-				SDL_GPURenderPass* render_pass = SDL_BeginGPURenderPass(cmdbuf, &color_target_info, 1, null);
-				SDL_BindGPUGraphicsPipeline(render_pass, screen_pipeline);
-				{
-					s_v4 color = v4(1, 1, 1, 1);
-					SDL_PushGPUVertexUniformData(cmdbuf, 0, &color, sizeof(color));
+				SDL_GPUDepthStencilTargetInfo depth_stencil_target_info = base_depth_stencil_target_info;
+				depth_stencil_target_info.texture = scene_depth_texture;
+				depth_stencil_target_info.load_op = SDL_GPU_LOADOP_CLEAR;
+
+				SDL_GPURenderPass* render_pass = SDL_BeginGPURenderPass(cmdbuf, &color_target_info, 1, &depth_stencil_target_info);
+				SDL_BindGPUGraphicsPipeline(render_pass, g_do_wireframe ? mesh_line_pipeline : mesh_fill_pipeline);
+
+				for(int mesh_i = 0; mesh_i < e_mesh_count; mesh_i += 1) {
+					int instance_count = g_mesh_instance_data_arr[mesh_i].count;
+					if(instance_count <= 0) { continue; }
+					s_mesh* mesh = &g_mesh_arr[mesh_i];
+					s_mesh_instance_data* instance_data = g_mesh_instance_data_arr[mesh_i].data;
+
+					{
+						upload_to_gpu_buffer(instance_data, sizeof(s_mesh_instance_data) * instance_count, mesh->instance_buffer, mesh->instance_transfer_buffer);
+						SDL_GPUBufferBinding binding_arr[2] = zero;
+						binding_arr[0].buffer = mesh->vertex_buffer;
+						binding_arr[1].buffer = mesh->instance_buffer;
+						SDL_BindGPUVertexBuffers(render_pass, 0, binding_arr, 2);
+					}
+
+					{
+						s_vertex_uniform_data1 data = zero;
+						data.screen_view = m4_identity();
+						data.screen_projection = make_orthographic(0, c_window_size.x, c_window_size.y, 0, -100, 100);
+						if(view_state == e_view_state_shadow_map) {
+							data.world_view = light_view;
+							data.world_projection = light_projection;
+						}
+						else {
+							data.world_view = look_at(cam_pos, cam_pos + cam_front, cam_up);
+							data.world_projection = make_perspective(90, c_window_width / (float)c_window_height, 0.01f, 500.0f);
+						}
+						data.light_view = light_view;
+						data.light_projection = light_projection;
+						SDL_PushGPUVertexUniformData(cmdbuf, 0, &data, sizeof(data));
+					}
+
+					{
+						s_fragment_uniform_data data = zero;
+						data.cam_pos = cam_pos;
+						SDL_PushGPUFragmentUniformData(cmdbuf, 0, &data, sizeof(data));
+					}
+
+					{
+						SDL_GPUTextureSamplerBinding binding_arr[1] = zero;
+						binding_arr[0].texture = shadow_texture;
+						binding_arr[0].sampler = shadow_texture_sampler;
+						SDL_BindGPUFragmentSamplers(render_pass, 0, binding_arr, 1);
+					}
+
+					SDL_DrawGPUPrimitives(render_pass, mesh->vertex_count, instance_count, 0, 0);
 				}
-				{
-					SDL_GPUTextureSamplerBinding binding = zero;
-					binding.texture = shadow_texture;
-					binding.sampler = shadow_texture_sampler;
-					SDL_BindGPUFragmentSamplers(render_pass, 0, &binding, 1);
-				}
-				SDL_DrawGPUPrimitives(render_pass, 6, 1, 0, 0);
 				SDL_EndGPURenderPass(render_pass);
 			}
-			else {
+			// ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^		mesh end		^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-				// vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv		mesh start		vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv
-				{
-					SDL_GPUColorTargetInfo color_target_info = base_color_target_info;
-					color_target_info.texture = swapchain_texture;
-					color_target_info.load_op = SDL_GPU_LOADOP_CLEAR;
-
-					SDL_GPUDepthStencilTargetInfo depth_stencil_target_info = base_depth_stencil_target_info;
-					depth_stencil_target_info.texture = scene_depth_texture;
-					depth_stencil_target_info.load_op = SDL_GPU_LOADOP_CLEAR;
-
-					SDL_GPURenderPass* render_pass = SDL_BeginGPURenderPass(cmdbuf, &color_target_info, 1, &depth_stencil_target_info);
-					SDL_BindGPUGraphicsPipeline(render_pass, g_do_wireframe ? mesh_line_pipeline : mesh_fill_pipeline);
-
-					for(int mesh_i = 0; mesh_i < e_mesh_count; mesh_i += 1) {
-						int instance_count = g_mesh_instance_data_arr[mesh_i].count;
-						if(instance_count <= 0) { continue; }
-						s_mesh* mesh = &g_mesh_arr[mesh_i];
-						s_mesh_instance_data* instance_data = g_mesh_instance_data_arr[mesh_i].data;
-
-						{
-							upload_to_gpu_buffer(instance_data, sizeof(s_mesh_instance_data) * instance_count, mesh->instance_buffer, mesh->instance_transfer_buffer);
-							SDL_GPUBufferBinding binding_arr[2] = zero;
-							binding_arr[0].buffer = mesh->vertex_buffer;
-							binding_arr[1].buffer = mesh->instance_buffer;
-							SDL_BindGPUVertexBuffers(render_pass, 0, binding_arr, 2);
-						}
-
-						{
-							s_vertex_uniform_data1 data = zero;
-							data.screen_view = m4_identity();
-							data.screen_projection = make_orthographic(0, c_window_size.x, c_window_size.y, 0, -100, 100);
-							if(view_state == e_view_state_shadow_map) {
-								data.world_view = light_view;
-								data.world_projection = light_projection;
-							}
-							else {
-								data.world_view = look_at(cam_pos, cam_pos + cam_front, cam_up);
-								data.world_projection = make_perspective(90, c_window_width / (float)c_window_height, 0.01f, 500.0f);
-							}
-							data.light_view = light_view;
-							data.light_projection = light_projection;
-							SDL_PushGPUVertexUniformData(cmdbuf, 0, &data, sizeof(data));
-						}
-
-						{
-							s_fragment_uniform_data data = zero;
-							data.cam_pos = cam_pos;
-							SDL_PushGPUFragmentUniformData(cmdbuf, 0, &data, sizeof(data));
-						}
-
-						{
-							SDL_GPUTextureSamplerBinding binding = zero;
-							binding.texture = shadow_texture;
-							binding.sampler = shadow_texture_sampler;
-							SDL_BindGPUFragmentSamplers(render_pass, 0, &binding, 1);
-						}
-
-						SDL_DrawGPUPrimitives(render_pass, mesh->vertex_count, instance_count, 0, 0);
-					}
-					SDL_EndGPURenderPass(render_pass);
-				}
-				// ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^		mesh end		^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-			}
 			for(int mesh_i = 0; mesh_i < e_mesh_count; mesh_i += 1) {
 				g_mesh_instance_data_arr[mesh_i].count = 0;
 			}
@@ -1693,4 +1668,12 @@ func s_triangle make_triangle(s_v3 v0, s_v3 v1, s_v3 v2)
 	result.vertex_arr[1] = v1;
 	result.vertex_arr[2] = v2;
 	return result;
+}
+
+func void draw_screen(s_v2 pos, s_v2 size, s_v4 color)
+{
+	s_m4 model = m4_translate(v3(pos, 0));
+	model = m4_multiply(model, m4_scale(v3(size, 1)));
+	int flags = e_render_flag_ignore_fog | e_render_flag_ignore_light | e_render_flag_dont_cast_shadows | e_render_flag_screen | e_render_flag_textured;
+	draw_mesh_screen(e_mesh_quad, model, color, flags);
 }

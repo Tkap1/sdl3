@@ -68,6 +68,7 @@ void vertex_main()
 #if m_fragment
 void fragment_main()
 {
+	bool textured = bool(v_flags & (1 << 4));
 	// vec3 normal = normalize(
 	// 	cross(
 	// 		dFdx(v_world_pos),
@@ -119,6 +120,10 @@ void fragment_main()
 		color = mix(color, fog_color, fog_dt);
 	}
 	// ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^		fog end		^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+	if(textured) {
+		color.rgb = vec3(texture(shadow_map, v_uv).r);
+	}
 
 	// vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv		out of bounds start		vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv
 	#if 1
