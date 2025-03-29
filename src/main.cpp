@@ -100,9 +100,6 @@ int main()
 
 	b8 left_down = false;
 
-
-
-
 	SDL_GPUGraphicsPipeline* mesh_fill_pipeline = null;
 	SDL_GPUGraphicsPipeline* mesh_line_pipeline = null;
 	{
