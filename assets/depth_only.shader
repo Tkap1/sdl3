@@ -1,5 +1,6 @@
 #version 450 core
 
+#if m_vertex
 layout (location = 0) in vec3 vertex;
 layout (location = 1) in vec3 normal;
 layout (location = 2) in vec4 vertex_color;
@@ -7,13 +8,6 @@ layout (location = 3) in vec2 uv;
 layout (location = 4) in vec4 instance_color;
 layout (location = 5) in int flags;
 layout (location = 6) in mat4 model;
-
-layout (location = 0) out vec4 v_color;
-layout (location = 1) out vec3 v_normal;
-layout (location = 2) out vec3 v_world_pos;
-layout (location = 3) out vec4 v_light_frag_pos;
-layout (location = 4) out flat int v_flags;
-layout (location = 5) out vec2 v_uv;
 
 layout (set = 1, binding = 0) uniform uniform_block {
 	mat4 world_view;
@@ -24,8 +18,17 @@ layout (set = 1, binding = 0) uniform uniform_block {
 	mat4 light_projection;
 	int depth_only;
 };
+#endif
 
-void main()
+layout (location = 0) shared_var vec4 v_color;
+layout (location = 1) shared_var vec3 v_normal;
+layout (location = 2) shared_var vec3 v_world_pos;
+layout (location = 3) shared_var vec4 v_light_frag_pos;
+layout (location = 4) shared_var flat int v_flags;
+layout (location = 5) shared_var vec2 v_uv;
+
+#if m_vertex
+void vertex_main()
 {
 	vec4 pos;
 	if(bool(flags & 1 << 3)) {
@@ -49,3 +52,10 @@ void main()
 	v_flags = flags;
 	v_uv = uv;
 }
+#endif
+
+#if m_fragment
+void fragment_main()
+{
+}
+#endif

@@ -26,6 +26,19 @@ struct s_mesh
 	SDL_GPUTransferBuffer* instance_transfer_buffer;
 };
 
+struct s_shader_data
+{
+	u32 sampler_count[2];
+	u32 uniform_buffer_count[2];
+	u32 storage_buffer_count[2];
+	u32 storage_texture_count[2];
+};
+
+struct s_shader_program
+{
+	SDL_GPUShader* shader_arr[2];
+};
+
 // @Note(tkap, 28/03/2025): If values change, shaders must also change
 enum e_render_flag
 {
@@ -266,13 +279,7 @@ func void operator-=(s_v3& a, s_v3 b)
 	a.z -= b.z;
 }
 
-func SDL_GPUShader* load_shader(
-	char* shaderFilename,
-	Uint32 samplerCount,
-	Uint32 uniformBufferCount,
-	Uint32 storageBufferCount,
-	Uint32 storageTextureCount
-);
+func s_shader_program load_shader(char* path, s_shader_data shader_data);
 func s_m4 m4_identity();
 func s_m4 m4_rotate(float angle, s_v3 axis);
 func s_v3 v3_normalized(s_v3 v);
@@ -291,7 +298,7 @@ func float smoothstep2(float edge0, float edge1, float x);
 func s_v3 get_triangle_normal(s_triangle triangle);
 func int roundfi(float x);
 func SDL_GPUGraphicsPipeline* create_pipeline(
-	SDL_GPUShader* vertex_shader, SDL_GPUShader* fragment_shader, SDL_GPUFillMode fill_mode, int num_color_targets,
+	s_shader_program shader, SDL_GPUFillMode fill_mode, int num_color_targets,
 	s_list<SDL_GPUVertexElementFormat, 16> vertex_attributes, s_list<SDL_GPUVertexElementFormat, 16> instance_attributes,
 	b8 has_depth
 );
