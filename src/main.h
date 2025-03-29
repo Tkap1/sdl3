@@ -319,3 +319,4 @@ func void setup_mesh_vertex_buffers(s_mesh* mesh, int buffer_size);
 func s_linear_arena make_arena_from_malloc(int requested_size);
 func u8* arena_alloc(s_linear_arena* arena, int requested_size);
 func void arena_reset(s_linear_arena* arena);
+func void make_game_mesh_from_ply_mesh(s_mesh* mesh, s_ply_mesh* ply_mesh);

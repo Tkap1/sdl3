@@ -96,6 +96,8 @@ int main()
 		return -1;
 	}
 
+	b8 left_down = false;
+
 	SDL_GPUShader* screen_vertex_shader = load_shader("screen.vert", 0, 1, 0, 0);
 	SDL_GPUShader* screen_fragment_shader = load_shader("screen.frag", 1, 0, 0, 0);
 
@@ -195,28 +197,7 @@ int main()
 
 	// vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv		make meshes start		vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv
 	{
-		{
-			s_mesh* mesh = &g_mesh_arr[e_mesh_sphere];
-			setup_common_mesh_stuff(mesh);
-			setup_mesh_vertex_buffers(mesh, sizeof(s_vertex) * ply_sphere.face_count * 3);
-
-			s_vertex vertex_arr[4096] = zero;
-			for(int i = 0; i < ply_sphere.face_count; i += 1) {
-				s_ply_vertex arr[3] = {
-					ply_sphere.vertex_arr[ply_sphere.face_arr[i].index_arr[0]],
-					ply_sphere.vertex_arr[ply_sphere.face_arr[i].index_arr[1]],
-					ply_sphere.vertex_arr[ply_sphere.face_arr[i].index_arr[2]],
-				};
-				for(int j = 0; j < 3; j += 1) {
-					assert(mesh->vertex_count < 4096);
-					vertex_arr[mesh->vertex_count] = {
-						arr[j].pos, arr[j].normal, make_color(1), arr[j].uv
-					};
-					mesh->vertex_count += 1;
-				}
-			}
-			upload_to_gpu_buffer(vertex_arr, sizeof(s_vertex) * mesh->vertex_count, mesh->vertex_buffer, mesh->vertex_transfer_buffer);
-		}
+		make_game_mesh_from_ply_mesh(&g_mesh_arr[e_mesh_sphere], &ply_sphere);
 
 		{
 			s_mesh* mesh = &g_mesh_arr[e_mesh_quad];
@@ -308,6 +289,13 @@ int main()
 			}
 			else if(event.type == SDL_EVENT_MOUSE_BUTTON_DOWN) {
 				if(event.button.button == SDL_BUTTON_LEFT) {
+					left_down = true;
+					g_player.want_to_shoot_timestamp = g_time;
+				}
+			}
+			else if(event.type == SDL_EVENT_MOUSE_BUTTON_UP) {
+				if(event.button.button == SDL_BUTTON_LEFT) {
+					left_down = false;
 					g_player.want_to_shoot_timestamp = g_time;
 				}
 			}
@@ -472,8 +460,9 @@ int main()
 								// z_arr[i] = h;
 								// height_arr[i] = h;
 								// height_scale_arr[i] = 1;
-								// color_arr[i] = v3(
-								// 	(x + y) % 2 == 0 ? 0.5f : 0.3f
+								// color_arr[i] = make_color(
+								// 	(x + y) % 2 == 0 ? 0.5f : 0.3f,
+								// 	1
 								// );
 							}
 							// ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^		hardcoded terrain end		^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -656,12 +645,12 @@ int main()
 				draw_mesh_world(e_mesh_sphere, model, make_color(0.5f, 1.0f, 0.5f), 0);
 			}
 
-			{
-				s_m4 model = m4_translate(v3(c_window_size.x * 0.5f, c_window_size.y * 0.5f, 0));
-				model = m4_multiply(model, m4_rotate(g_time, v3(0, 1, 0)));
-				model = m4_multiply(model, m4_scale(v3(64, 64, 1)));
-				draw_mesh_screen(e_mesh_quad, model, make_color(1), 0);
-			}
+			// {
+			// 	s_m4 model = m4_translate(v3(c_window_size.x * 0.5f, c_window_size.y * 0.5f, 0));
+			// 	model = m4_multiply(model, m4_rotate(g_time, v3(0, 1, 0)));
+			// 	model = m4_multiply(model, m4_scale(v3(64, 64, 1)));
+			// 	draw_mesh_screen(e_mesh_quad, model, make_color(1), 0);
+			// }
 
 			// vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv		scene to depth start		vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv
 			{
@@ -1638,4 +1627,27 @@ func u8* arena_alloc(s_linear_arena* arena, int requested_size)
 func void arena_reset(s_linear_arena* arena)
 {
 	arena->used = 0;
+}
+
+func void make_game_mesh_from_ply_mesh(s_mesh* mesh, s_ply_mesh* ply_mesh)
+{
+	setup_common_mesh_stuff(mesh);
+	setup_mesh_vertex_buffers(mesh, sizeof(s_vertex) * ply_mesh->face_count * 3);
+
+	s_vertex vertex_arr[4096] = zero;
+	for(int i = 0; i < ply_mesh->face_count; i += 1) {
+		s_ply_vertex arr[3] = {
+			ply_mesh->vertex_arr[ply_mesh->face_arr[i].index_arr[0]],
+			ply_mesh->vertex_arr[ply_mesh->face_arr[i].index_arr[1]],
+			ply_mesh->vertex_arr[ply_mesh->face_arr[i].index_arr[2]],
+		};
+		for(int j = 0; j < 3; j += 1) {
+			assert(mesh->vertex_count < 4096);
+			vertex_arr[mesh->vertex_count] = {
+				arr[j].pos, arr[j].normal, make_color(1), arr[j].uv
+			};
+			mesh->vertex_count += 1;
+		}
+	}
+	upload_to_gpu_buffer(vertex_arr, sizeof(s_vertex) * mesh->vertex_count, mesh->vertex_buffer, mesh->vertex_transfer_buffer);
 }
