@@ -178,7 +178,7 @@ struct s_triangle
 
 struct s_collision_data
 {
-	s_list<s_triangle, 8> triangle_arr;
+	s_list<s_triangle, 32> triangle_arr;
 };
 
 struct s_box

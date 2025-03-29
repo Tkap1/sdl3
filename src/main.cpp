@@ -454,7 +454,7 @@ int main()
 								// float h = smoothstep2(30, 60, x_arr[i]) * 40;
 								// h += smoothstep2(100, 130, x_arr[i]) * 80;
 								// h += smoothstep2(200, 230, x_arr[i]) * 160;
-								// // h = roundf(sinf(x_arr[i] * 0.1f)) * 10;
+								// h = roundf(sinf(x_arr[i] * 0.1f)) * 10;
 
 								// z_arr[i] = h;
 								// height_arr[i] = h;
@@ -584,12 +584,18 @@ int main()
 				sphere->vel.z -= 0.005f;
 				constexpr int c_steps = 25;
 				s_v3 small_movement = sphere->vel / c_steps;
+				s_v3 total_collision_normal = zero;
 				for(int j = 0; j < c_steps; j += 1) {
 					sphere->pos += small_movement;
 					s_collision_data collision_data = check_collision(sphere->pos, make_box(sphere->pos, v3(0.1f)));
-					if(collision_data.triangle_arr.count > 0) {
+					b8 did_we_collide = false;
+					for(int collision_i = 0; collision_i < collision_data.triangle_arr.count; collision_i += 1) {
+						did_we_collide = true;
+						total_collision_normal += get_triangle_normal(collision_data.triangle_arr[collision_i]);
+					}
+					if(did_we_collide) {
 						sphere->pos -= small_movement;
-						s_v3 normal = get_triangle_normal(collision_data.triangle_arr[0]);
+						s_v3 normal = v3_normalized(total_collision_normal);
 						sphere->vel = v3_reflect(sphere->vel, normal) * 0.9f;
 						break;
 					}
