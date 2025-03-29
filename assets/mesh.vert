@@ -16,8 +16,10 @@ layout (location = 4) out flat int v_flags;
 layout (location = 5) out vec2 v_uv;
 
 layout (set = 1, binding = 0) uniform uniform_block {
-	mat4 view;
-	mat4 projection;
+	mat4 world_view;
+	mat4 world_projection;
+	mat4 screen_view;
+	mat4 screen_projection;
 	mat4 light_view;
 	mat4 light_projection;
 	int depth_only;
@@ -25,7 +27,13 @@ layout (set = 1, binding = 0) uniform uniform_block {
 
 void main()
 {
-	vec4 pos = projection * view * model * vec4(vertex, 1.0);
+	vec4 pos;
+	if(bool(flags & 1 << 3)) {
+		pos = screen_projection * screen_view * model * vec4(vertex, 1.0);
+	}
+	else {
+		pos = world_projection * world_view * model * vec4(vertex, 1.0);
+	}
 
 	// if we are on depth-only pass and we don't want to cast a shadow, "discard" this vertex
 	if(depth_only > 0 && bool(flags & 1)) {

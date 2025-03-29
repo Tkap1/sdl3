@@ -71,14 +71,16 @@ void main()
 
 	// vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv		out of bounds start		vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv
 	#if 1
-	if(temp0.x < 0 || temp0.x > 1) {
-		color = vec3(0, 0, 1);
-	}
-	else if(temp0.y < 0 || temp0.y > 1) {
-		color = vec3(0, 0, 1);
-	}
-	else if(temp0.z < 0 || temp0.z > 1) {
-		color = vec3(0, 0, 1);
+	if(!bool(v_flags & (1 << 1))) {
+		if(temp0.x < 0 || temp0.x > 1) {
+			color = vec3(0, 0, 1);
+		}
+		else if(temp0.y < 0 || temp0.y > 1) {
+			color = vec3(0, 0, 1);
+		}
+		else if(temp0.z < 0 || temp0.z > 1) {
+			color = vec3(0, 0, 1);
+		}
 	}
 	#endif
 	// ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^		out of bounds end		^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

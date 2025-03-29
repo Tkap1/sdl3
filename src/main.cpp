@@ -219,6 +219,40 @@ int main()
 		}
 
 		{
+			s_mesh* mesh = &g_mesh_arr[e_mesh_quad];
+			mesh->vertex_count = 6;
+			setup_common_mesh_stuff(mesh);
+			setup_mesh_vertex_buffers(mesh, sizeof(s_vertex) * 6);
+			s_vertex vertex_arr[6] = zero;
+			constexpr float c_size = 0.5f;
+			vertex_arr[0].pos = v3(-c_size, -c_size, 0.0f);
+			vertex_arr[0].normal = v3(0, -1, 0);
+			vertex_arr[0].color = make_color(0, 1, 0);
+			vertex_arr[0].uv = v2(0, 1);
+			vertex_arr[1].pos = v3(c_size, -c_size, 0.0f);
+			vertex_arr[1].normal = v3(0, -1, 0);
+			vertex_arr[1].color = make_color(1);
+			vertex_arr[1].uv = v2(1, 1);
+			vertex_arr[2].pos = v3(c_size, c_size, 0.0f);
+			vertex_arr[2].normal = v3(0, -1, 0);
+			vertex_arr[2].color = make_color(1, 0, 0);
+			vertex_arr[2].uv = v2(1, 0);
+			vertex_arr[3].pos = v3(-c_size, -c_size, 0.0f);
+			vertex_arr[3].normal = v3(0, -1, 0);
+			vertex_arr[3].color = make_color(1);
+			vertex_arr[3].uv = v2(0, 1);
+			vertex_arr[4].pos = v3(c_size, c_size, 0.0f);
+			vertex_arr[4].normal = v3(0, -1, 0);
+			vertex_arr[4].color = make_color(1);
+			vertex_arr[4].uv = v2(1, 0);
+			vertex_arr[5].pos = v3(-c_size, c_size, 0.0f);
+			vertex_arr[5].normal = v3(0, -1, 0);
+			vertex_arr[5].color = make_color(1);
+			vertex_arr[5].uv = v2(0, 0);
+			upload_to_gpu_buffer(vertex_arr, sizeof(s_vertex) * mesh->vertex_count, mesh->vertex_buffer, mesh->vertex_transfer_buffer);
+		}
+
+		{
 			s_mesh* mesh = &g_mesh_arr[e_mesh_terrain];
 			setup_common_mesh_stuff(mesh);
 			setup_mesh_vertex_buffers(mesh, sizeof(s_vertex) * c_vertex_count);
@@ -614,12 +648,19 @@ int main()
 				-c_tiles_x * 0.6f * c_tile_size, c_tiles_x * 0.6f * c_tile_size, -100, 100, -c_tiles_y * 1.1f * c_tile_size, c_tiles_y * 1.1f * c_tile_size
 			);
 
-			draw_mesh(e_mesh_terrain, m4_identity(), make_color(1), 0);
+			draw_mesh_world(e_mesh_terrain, m4_identity(), make_color(1), 0);
 			for(int i = 0; i < g_sphere_arr.count; i += 1) {
 				s_sphere sphere = g_sphere_arr[i];
 				s_m4 model = m4_translate(sphere.pos);
 				model = m4_multiply(model, m4_scale(v3(1.5f)));
-				draw_mesh(e_mesh_sphere, model, make_color(0.5f, 1.0f, 0.5f), 0);
+				draw_mesh_world(e_mesh_sphere, model, make_color(0.5f, 1.0f, 0.5f), 0);
+			}
+
+			{
+				s_m4 model = m4_translate(v3(c_window_size.x * 0.5f, c_window_size.y * 0.5f, 0));
+				model = m4_multiply(model, m4_rotate(g_time, v3(0, 1, 0)));
+				model = m4_multiply(model, m4_scale(v3(64, 64, 1)));
+				draw_mesh_screen(e_mesh_quad, model, make_color(1), 0);
 			}
 
 			// vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv		scene to depth start		vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv
@@ -646,8 +687,8 @@ int main()
 					}
 					{
 						s_vertex_uniform_data1 data = zero;
-						data.view = light_view;
-						data.projection = light_projection;
+						data.world_view = light_view;
+						data.world_projection = light_projection;
 						data.light_view = light_view;
 						data.light_projection = light_projection;
 						data.depth_only = 1;
@@ -711,13 +752,15 @@ int main()
 
 						{
 							s_vertex_uniform_data1 data = zero;
+							data.screen_view = m4_identity();
+							data.screen_projection = make_orthographic(0, c_window_size.x, c_window_size.y, 0, -100, 100);
 							if(view_state == e_view_state_shadow_map) {
-								data.view = light_view;
-								data.projection = light_projection;
+								data.world_view = light_view;
+								data.world_projection = light_projection;
 							}
 							else {
-								data.view = look_at(cam_pos, cam_pos + cam_front, cam_up);
-								data.projection = make_perspective(90, c_window_width / (float)c_window_height, 0.01f, 500.0f);
+								data.world_view = look_at(cam_pos, cam_pos + cam_front, cam_up);
+								data.world_projection = make_perspective(90, c_window_width / (float)c_window_height, 0.01f, 500.0f);
 							}
 							data.light_view = light_view;
 							data.light_projection = light_projection;
@@ -1520,12 +1563,21 @@ func s_box make_box(s_v3 pos, s_v3 size)
 	return result;
 }
 
-func void draw_mesh(e_mesh mesh_id, s_m4 model, s_v4 color, int flags)
+func void draw_mesh_world(e_mesh mesh_id, s_m4 model, s_v4 color, int flags)
 {
 	s_mesh_instance_data data = zero;
 	data.model = model;
 	data.color = color;
 	data.flags = flags;
+	g_mesh_instance_data_arr[mesh_id].add(data);
+}
+
+func void draw_mesh_screen(e_mesh mesh_id, s_m4 model, s_v4 color, int flags)
+{
+	s_mesh_instance_data data = zero;
+	data.model = model;
+	data.color = color;
+	data.flags = flags | e_render_flag_ignore_fog | e_render_flag_ignore_light | e_render_flag_dont_cast_shadows | e_render_flag_screen;
 	g_mesh_instance_data_arr[mesh_id].add(data);
 }
 

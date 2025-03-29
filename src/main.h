@@ -13,6 +13,7 @@ enum e_mesh
 {
 	e_mesh_sphere,
 	e_mesh_terrain,
+	e_mesh_quad,
 	e_mesh_count,
 };
 
@@ -31,6 +32,7 @@ enum e_render_flag
 	e_render_flag_dont_cast_shadows = 1 << 0,
 	e_render_flag_ignore_light = 1 << 1,
 	e_render_flag_ignore_fog = 1 << 2,
+	e_render_flag_screen = 1 << 3,
 };
 
 enum e_view_state
@@ -139,8 +141,10 @@ struct s_linear_arena
 
 struct s_vertex_uniform_data1
 {
-	s_m4 view;
-	s_m4 projection;
+	s_m4 world_view;
+	s_m4 world_projection;
+	s_m4 screen_view;
+	s_m4 screen_projection;
 	s_m4 light_view;
 	s_m4 light_projection;
 	int depth_only;
@@ -308,7 +312,8 @@ func s_collision_data check_collision(s_v3 pos, s_box hitbox);
 func u8* read_file(char* path);
 func s_ply_mesh parse_ply_mesh(char* path);
 func s_box make_box(s_v3 pos, s_v3 size);
-func void draw_mesh(e_mesh mesh_id, s_m4 model, s_v4 color, int flags);
+func void draw_mesh_world(e_mesh mesh_id, s_m4 model, s_v4 color, int flags);
+func void draw_mesh_screen(e_mesh mesh_id, s_m4 model, s_v4 color, int flags);
 func void setup_common_mesh_stuff(s_mesh* mesh);
 func void setup_mesh_vertex_buffers(s_mesh* mesh, int buffer_size);
 func s_linear_arena make_arena_from_malloc(int requested_size);
