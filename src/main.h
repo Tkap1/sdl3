@@ -209,7 +209,7 @@ struct s_speed_buff
 
 func constexpr s_v2 v2(float x, float y)
 {
-	s_v2 result;
+	s_v2 result = zero;
 	result.x = x;
 	result.y = y;
 	return result;
