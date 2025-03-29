@@ -296,7 +296,6 @@ int main()
 			else if(event.type == SDL_EVENT_MOUSE_BUTTON_UP) {
 				if(event.button.button == SDL_BUTTON_LEFT) {
 					left_down = false;
-					g_player.want_to_shoot_timestamp = g_time;
 				}
 			}
 			else if(event.type == SDL_EVENT_MOUSE_MOTION) {
@@ -469,8 +468,16 @@ int main()
 						}
 
 						s_v3 normal_arr[2] = zero;
-						normal_arr[0] = get_triangle_normal(v3(x_arr[0], y_arr[0], z_arr[0]), v3(x_arr[1], y_arr[1], z_arr[1]), v3(x_arr[2], y_arr[2], z_arr[2]));
-						normal_arr[1] = get_triangle_normal(v3(x_arr[3], y_arr[3], z_arr[3]), v3(x_arr[4], y_arr[4], z_arr[4]), v3(x_arr[5], y_arr[5], z_arr[5]));
+						normal_arr[0] = get_triangle_normal(make_triangle(
+							v3(x_arr[0], y_arr[0], z_arr[0]),
+							v3(x_arr[1], y_arr[1], z_arr[1]),
+							v3(x_arr[2], y_arr[2], z_arr[2])
+						));
+						normal_arr[1] = get_triangle_normal(make_triangle(
+							v3(x_arr[3], y_arr[3], z_arr[3]),
+							v3(x_arr[4], y_arr[4], z_arr[4]),
+							v3(x_arr[5], y_arr[5], z_arr[5])
+						));
 
 						for(int i = 0; i < 6; i += 1) {
 							g_terrain_vertex_arr[count] = {v3(x_arr[i], y_arr[i], height_arr[i] * height_scale_arr[i]), normal_arr[i / 3], color_arr[i], v2(0, 0)};
@@ -543,9 +550,9 @@ int main()
 					s_v3 small_movement = temp_movement / c_steps;
 					for(int j = 0; j < c_steps; j += 1) {
 						g_player.pos += small_movement;
-						s_collision_data temp_collision_data = check_collision(g_player.pos, make_box(g_player.pos, c_player_size));
-						if(temp_collision_data.collides) {
-							s_v3 normal = get_triangle_normal(temp_collision_data.vertices[0], temp_collision_data.vertices[1], temp_collision_data.vertices[2]);
+						s_collision_data collision_data = check_collision(g_player.pos, make_box(g_player.pos, c_player_size));
+						if(collision_data.triangle_arr.count > 0) {
+							s_v3 normal = get_triangle_normal(collision_data.triangle_arr[0]);
 							g_player.pos -= small_movement;
 							if(i == 0) {
 								float dot = v3_dot(v3(0, 0, 1), normal);
@@ -580,9 +587,9 @@ int main()
 				for(int j = 0; j < c_steps; j += 1) {
 					sphere->pos += small_movement;
 					s_collision_data collision_data = check_collision(sphere->pos, make_box(sphere->pos, v3(0.1f)));
-					if(collision_data.collides) {
+					if(collision_data.triangle_arr.count > 0) {
 						sphere->pos -= small_movement;
-						s_v3 normal = get_triangle_normal(collision_data.vertices[0], collision_data.vertices[1], collision_data.vertices[2]);
+						s_v3 normal = get_triangle_normal(collision_data.triangle_arr[0]);
 						sphere->vel = v3_reflect(sphere->vel, normal) * 0.9f;
 						break;
 					}
@@ -1031,10 +1038,10 @@ func float ilerp(float a, float b, float c)
 	return result;
 }
 
-func s_v3 get_triangle_normal(s_v3 v1, s_v3 v2, s_v3 v3)
+func s_v3 get_triangle_normal(s_triangle triangle)
 {
-	s_v3 t1 = v2 - v1;
-	s_v3 t2 = v3 - v1;
+	s_v3 t1 = triangle.vertex_arr[1] - triangle.vertex_arr[0];
+	s_v3 t2 = triangle.vertex_arr[2] - triangle.vertex_arr[0];
 	s_v3 normal = v3_cross(t2, t1);
 	return v3_normalized(normal);
 }
@@ -1435,16 +1442,12 @@ func s_collision_data check_collision(s_v3 pos, s_box hitbox)
 				b.vertices[2] = g_terrain_vertex_arr[index + 3 * i + 2].pos;
 				b.vertex_count = 3;
 				if(SATCollision3D(a, b)) {
-					result.collides = true;
-					result.vertices[0] = b.vertices[0];
-					result.vertices[1] = b.vertices[1];
-					result.vertices[2] = b.vertices[2];
-					goto end;
+					s_triangle triangle = make_triangle(b.vertices[0], b.vertices[1], b.vertices[2]);
+					result.triangle_arr.add(triangle);
 				}
 			}
 		}
 	}
-	end:
 	return result;
 }
 
@@ -1650,4 +1653,13 @@ func void make_game_mesh_from_ply_mesh(s_mesh* mesh, s_ply_mesh* ply_mesh)
 		}
 	}
 	upload_to_gpu_buffer(vertex_arr, sizeof(s_vertex) * mesh->vertex_count, mesh->vertex_buffer, mesh->vertex_transfer_buffer);
+}
+
+func s_triangle make_triangle(s_v3 v0, s_v3 v1, s_v3 v2)
+{
+	s_triangle result = zero;
+	result.vertex_arr[0] = v0;
+	result.vertex_arr[1] = v1;
+	result.vertex_arr[2] = v2;
+	return result;
 }

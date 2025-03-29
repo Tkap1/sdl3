@@ -171,10 +171,14 @@ struct s_shape
 	int vertex_count;
 };
 
+struct s_triangle
+{
+	s_v3 vertex_arr[3];
+};
+
 struct s_collision_data
 {
-	b8 collides;
-	s_v3 vertices[3];
+	s_list<s_triangle, 8> triangle_arr;
 };
 
 struct s_box
@@ -284,7 +288,7 @@ func float lerp(float a, float b, float t);
 func float ilerp(float a, float b, float c);
 func float clamp(float curr, float min_val, float max_val);
 func float smoothstep2(float edge0, float edge1, float x);
-func s_v3 get_triangle_normal(s_v3 v1, s_v3 v2, s_v3 v3);
+func s_v3 get_triangle_normal(s_triangle triangle);
 func int roundfi(float x);
 func SDL_GPUGraphicsPipeline* create_pipeline(
 	SDL_GPUShader* vertex_shader, SDL_GPUShader* fragment_shader, SDL_GPUFillMode fill_mode, int num_color_targets,
@@ -320,3 +324,4 @@ func s_linear_arena make_arena_from_malloc(int requested_size);
 func u8* arena_alloc(s_linear_arena* arena, int requested_size);
 func void arena_reset(s_linear_arena* arena);
 func void make_game_mesh_from_ply_mesh(s_mesh* mesh, s_ply_mesh* ply_mesh);
+func s_triangle make_triangle(s_v3 v0, s_v3 v1, s_v3 v2);
