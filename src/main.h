@@ -267,7 +267,7 @@ func void operator-=(s_v3& a, s_v3 b)
 }
 
 func SDL_GPUShader* load_shader(
-	const char* shaderFilename,
+	char* shaderFilename,
 	Uint32 samplerCount,
 	Uint32 uniformBufferCount,
 	Uint32 storageBufferCount,

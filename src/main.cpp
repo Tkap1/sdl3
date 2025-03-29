@@ -8,15 +8,15 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include "SDL3/SDL.h"
+#include "shaderc/shaderc.h"
+
+#define FNL_IMPL
+#include "FastNoiseLite.h"
 
 #include "tk_types.h"
 #include "intrin.h"
 #include "main.h"
 
-#define FNL_IMPL
-#include "FastNoiseLite.h"
-
-global constexpr char* c_base_path = "";
 global SDL_GPUTexture* scene_depth_texture;
 global SDL_GPUTexture* shadow_texture;
 global SDL_GPUSampler* shadow_texture_sampler;
@@ -46,13 +46,15 @@ global s_mesh g_mesh_arr[e_mesh_count];
 global s_mesh_instance_data g_mesh_instance_data[e_mesh_count][c_max_mesh_instances];
 global s_list<s_mesh_instance_data, c_max_mesh_instances> g_mesh_instance_data_arr[e_mesh_count];
 global s_linear_arena g_frame_arena;
-s_vertex g_terrain_vertex_arr[c_vertex_count];
+global s_vertex g_terrain_vertex_arr[c_vertex_count];
+global shaderc_compiler_t g_shader_compiler;
 
 int main()
 {
+	g_frame_arena = make_arena_from_malloc(1024 * 1024 * 1024);
 	SDL_Init(SDL_INIT_VIDEO);
 
-	g_frame_arena = make_arena_from_malloc(1024 * 1024 * 1024);
+	g_shader_compiler = shaderc_compiler_initialize();
 
 	g_player.pos.x = 10;
 	g_player.pos.y = 10;
@@ -90,20 +92,16 @@ int main()
 	// your device does not support any required depth texture format
 	assert(g_depth_texture_format != SDL_GPU_TEXTUREFORMAT_INVALID);
 
-	SDL_GPUShader* mesh_fragment_shader = load_shader("mesh.frag", 1, 1, 0, 0);
-	if(mesh_fragment_shader == null) {
-		SDL_Log("Failed to create fragment shader!");
-		return -1;
-	}
+	SDL_GPUShader* mesh_vertex_shader = load_shader("assets/mesh.vert", 0, 1, 0, 0);
+	SDL_GPUShader* mesh_fragment_shader = load_shader("assets/mesh.frag", 1, 1, 0, 0);
+	SDL_GPUShader* screen_vertex_shader = load_shader("assets/screen.vert", 0, 1, 0, 0);
+	SDL_GPUShader* screen_fragment_shader = load_shader("assets/screen.frag", 1, 0, 0, 0);
+	SDL_GPUShader* depth_only_fragment_shader = load_shader("assets/depth_only.frag", 0, 0, 0, 0);
 
 	b8 left_down = false;
 
-	SDL_GPUShader* screen_vertex_shader = load_shader("screen.vert", 0, 1, 0, 0);
-	SDL_GPUShader* screen_fragment_shader = load_shader("screen.frag", 1, 0, 0, 0);
 
-	SDL_GPUShader* depth_only_fragment_shader = load_shader("depth_only.frag", 0, 0, 0, 0);
 
-	SDL_GPUShader* mesh_vertex_shader = load_shader("mesh.vert", 0, 1, 0, 0);
 
 	SDL_GPUGraphicsPipeline* mesh_fill_pipeline = null;
 	SDL_GPUGraphicsPipeline* mesh_line_pipeline = null;
@@ -244,6 +242,8 @@ int main()
 
 
 	b8 generate_terrain = true;
+
+	shaderc_compiler_release(g_shader_compiler);
 
 	// vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv		loop start		vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv
 	b8 running = true;
@@ -804,7 +804,7 @@ int main()
 }
 
 func SDL_GPUShader* load_shader(
-	const char* shaderFilename,
+	char* shaderFilename,
 	Uint32 sampler_count,
 	Uint32 uniformBufferCount,
 	Uint32 storageBufferCount,
@@ -813,44 +813,42 @@ func SDL_GPUShader* load_shader(
 {
 	// Auto-detect the shader stage from the file name for convenience
 	SDL_GPUShaderStage stage;
+	shaderc_shader_kind stage2 = shaderc_vertex_shader;
 	if(SDL_strstr(shaderFilename, ".vert")) {
 		stage = SDL_GPU_SHADERSTAGE_VERTEX;
+		stage2 = shaderc_vertex_shader;
 	}
 	else if(SDL_strstr(shaderFilename, ".frag")) {
 		stage = SDL_GPU_SHADERSTAGE_FRAGMENT;
+		stage2 = shaderc_fragment_shader;
 	}
 	else {
 		SDL_Log("Invalid shader stage!");
 		return null;
 	}
 
-	char fullPath[256];
-	SDL_GPUShaderFormat backendFormats = SDL_GetGPUShaderFormats(g_device);
-	SDL_GPUShaderFormat format = SDL_GPU_SHADERFORMAT_INVALID;
-	const char *entrypoint;
+	char* shader_src = (char*)read_file(shaderFilename);
+	assert(shader_src);
 
-	if(backendFormats & SDL_GPU_SHADERFORMAT_SPIRV) {
-		SDL_snprintf(fullPath, sizeof(fullPath), "%sassets/%s.spv", c_base_path, shaderFilename);
-		format = SDL_GPU_SHADERFORMAT_SPIRV;
-		entrypoint = "main";
+	shaderc_compilation_result_t compile_result = shaderc_compile_into_spv(g_shader_compiler, shader_src, strlen(shader_src), stage2, shaderFilename, "main", null);
+	int num_warnings = (int)shaderc_result_get_num_warnings(compile_result);
+	int num_errors = (int)shaderc_result_get_num_errors(compile_result);
+	if(num_warnings > 0) {
+		const char* str = shaderc_result_get_error_message(compile_result);
+		printf("SHADER WARNING: %s\n", str);
+		exit(0);
 	}
-	else {
-		SDL_Log("%s", "Unrecognized backend shader format!");
-		return null;
-	}
-
-	size_t codeSize;
-	void* code = SDL_LoadFile(fullPath, &codeSize);
-	if(code == null) {
-		SDL_Log("Failed to load shader from disk! %s", fullPath);
-		return null;
+	if(num_errors > 0) {
+		const char* str = shaderc_result_get_error_message(compile_result);
+		printf("SHADER ERROR: %s\n", str);
+		exit(0);
 	}
 
 	SDL_GPUShaderCreateInfo shaderInfo = zero;
-	shaderInfo.code = (u8*)code;
-	shaderInfo.code_size = codeSize;
-	shaderInfo.entrypoint = entrypoint;
-	shaderInfo.format = format;
+	shaderInfo.code = (u8*)shaderc_result_get_bytes(compile_result);
+	shaderInfo.code_size = shaderc_result_get_length(compile_result);
+	shaderInfo.entrypoint = "main";
+	shaderInfo.format = SDL_GPU_SHADERFORMAT_SPIRV;
 	shaderInfo.stage = stage;
 	shaderInfo.num_samplers = sampler_count;
 	shaderInfo.num_uniform_buffers = uniformBufferCount;
@@ -860,11 +858,9 @@ func SDL_GPUShader* load_shader(
 	SDL_GPUShader* shader = SDL_CreateGPUShader(g_device, &shaderInfo);
 	if(shader == null) {
 		SDL_Log("Failed to create shader!");
-		SDL_free(code);
 		return null;
 	}
 
-	SDL_free(code);
 	return shader;
 }
 
@@ -1478,12 +1474,20 @@ t* s_list<t, n>::add(t new_element)
 func u8* read_file(char* path)
 {
 	FILE* file = fopen(path, "rb");
-	fseek(file, 0, SEEK_END);
-	int size = ftell(file);
-	fseek(file, 0, SEEK_SET);
-	u8* result = arena_alloc(&g_frame_arena, size);
-	fread(result, 1, size, file);
-	fclose(file);
+	b8 read_file = false;
+	u8* result = null;
+	if(file) {
+		read_file = true;
+	}
+	if(read_file) {
+		fseek(file, 0, SEEK_END);
+		int size = ftell(file);
+		fseek(file, 0, SEEK_SET);
+		result = arena_alloc(&g_frame_arena, size + 1);
+		fread(result, 1, size, file);
+		fclose(file);
+		result[size] = '\0';
+	}
 	return result;
 }
 
