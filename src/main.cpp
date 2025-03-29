@@ -259,68 +259,78 @@ int main()
 		{
 			SDL_EnumerateDirectory("./assets", enumerate_directory_callback, null);
 			if(g_reload_shaders) {
+				s_shader_program new_shader_arr[2] = zero;
 				g_reload_shaders = false;
 				g_shader_compiler = shaderc_compiler_initialize();
-				if(mesh_fill_pipeline) {
-					SDL_ReleaseGPUGraphicsPipeline(g_device, mesh_fill_pipeline);
-				}
-				if(mesh_line_pipeline) {
-					SDL_ReleaseGPUGraphicsPipeline(g_device, mesh_line_pipeline);
-				}
-				if(mesh_depth_only_pipeline) {
-					SDL_ReleaseGPUGraphicsPipeline(g_device, mesh_depth_only_pipeline);
-				}
 
 				{
 					s_shader_data data = zero;
 					data.sampler_count[1] = 1;
 					data.uniform_buffer_count[0] = 1;
 					data.uniform_buffer_count[1] = 1;
-					mesh_shader = load_shader("assets/mesh.shader", data);
+					new_shader_arr[0] = load_shader("assets/mesh.shader", data);
 				}
 				{
 					s_shader_data data = zero;
 					data.uniform_buffer_count[0] = 1;
-					depth_only_shader = load_shader("assets/depth_only.shader", data);
+					new_shader_arr[1] = load_shader("assets/depth_only.shader", data);
 				}
 
-				{
-					s_list<SDL_GPUVertexElementFormat, 16> vertex_attributes;
-					vertex_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3);
-					vertex_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3);
-					vertex_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4);
-					vertex_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_FLOAT2);
-					s_list<SDL_GPUVertexElementFormat, 16> instance_attributes;
-					instance_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4);
-					instance_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_INT);
-					instance_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4);
-					instance_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4);
-					instance_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4);
-					instance_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4);
-					mesh_fill_pipeline = create_pipeline(mesh_shader, SDL_GPU_FILLMODE_FILL, 1, vertex_attributes, instance_attributes, true);
-					mesh_line_pipeline = create_pipeline(mesh_shader, SDL_GPU_FILLMODE_LINE, 1, vertex_attributes, instance_attributes, true);
-				}
+				if(is_shader_valid(new_shader_arr[0]) && is_shader_valid(new_shader_arr[1])) {
+					mesh_shader = new_shader_arr[0];
+					depth_only_shader = new_shader_arr[1];
 
-				{
-					s_list<SDL_GPUVertexElementFormat, 16> vertex_attributes;
-					vertex_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3);
-					vertex_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3);
-					vertex_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4);
-					vertex_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_FLOAT2);
-					s_list<SDL_GPUVertexElementFormat, 16> instance_attributes;
-					instance_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4);
-					instance_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_INT);
-					instance_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4);
-					instance_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4);
-					instance_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4);
-					instance_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4);
-					mesh_depth_only_pipeline = create_pipeline(depth_only_shader, SDL_GPU_FILLMODE_FILL, 0, vertex_attributes, instance_attributes, true);
+					if(mesh_fill_pipeline) {
+						SDL_ReleaseGPUGraphicsPipeline(g_device, mesh_fill_pipeline);
+					}
+					if(mesh_line_pipeline) {
+						SDL_ReleaseGPUGraphicsPipeline(g_device, mesh_line_pipeline);
+					}
+					if(mesh_depth_only_pipeline) {
+						SDL_ReleaseGPUGraphicsPipeline(g_device, mesh_depth_only_pipeline);
+					}
+
+					{
+						s_list<SDL_GPUVertexElementFormat, 16> vertex_attributes;
+						vertex_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3);
+						vertex_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3);
+						vertex_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4);
+						vertex_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_FLOAT2);
+						s_list<SDL_GPUVertexElementFormat, 16> instance_attributes;
+						instance_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4);
+						instance_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_INT);
+						instance_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4);
+						instance_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4);
+						instance_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4);
+						instance_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4);
+						mesh_fill_pipeline = create_pipeline(mesh_shader, SDL_GPU_FILLMODE_FILL, 1, vertex_attributes, instance_attributes, true);
+						mesh_line_pipeline = create_pipeline(mesh_shader, SDL_GPU_FILLMODE_LINE, 1, vertex_attributes, instance_attributes, true);
+					}
+
+					{
+						s_list<SDL_GPUVertexElementFormat, 16> vertex_attributes;
+						vertex_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3);
+						vertex_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3);
+						vertex_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4);
+						vertex_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_FLOAT2);
+						s_list<SDL_GPUVertexElementFormat, 16> instance_attributes;
+						instance_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4);
+						instance_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_INT);
+						instance_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4);
+						instance_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4);
+						instance_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4);
+						instance_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4);
+						mesh_depth_only_pipeline = create_pipeline(depth_only_shader, SDL_GPU_FILLMODE_FILL, 0, vertex_attributes, instance_attributes, true);
+					}
 				}
 
 				// Clean up shader resources
 				for(int i = 0; i < 2; i += 1) {
-					SDL_ReleaseGPUShader(g_device, depth_only_shader.shader_arr[i]);
-					SDL_ReleaseGPUShader(g_device, mesh_shader.shader_arr[i]);
+					for(int j = 0; j < 2; j += 1) {
+						if(new_shader_arr[i].shader_arr[j]) {
+							SDL_ReleaseGPUShader(g_device, new_shader_arr[i].shader_arr[j]);
+						}
+					}
 				}
 
 				shaderc_compiler_release(g_shader_compiler);
@@ -849,34 +859,35 @@ func s_shader_program load_shader(char* path, s_shader_data shader_data)
 
 		int num_warnings = (int)shaderc_result_get_num_warnings(compile_result);
 		int num_errors = (int)shaderc_result_get_num_errors(compile_result);
+		b8 make_shader = true;
 		if(num_warnings > 0) {
 			const char* str = shaderc_result_get_error_message(compile_result);
 			printf("SHADER WARNING: %s\n", str);
-			exit(0);
+			make_shader = false;
 		}
 		if(num_errors > 0) {
 			const char* str = shaderc_result_get_error_message(compile_result);
 			printf("SHADER ERROR: %s\n", str);
-			exit(0);
+			make_shader = false;
 		}
 
-		SDL_GPUShaderCreateInfo shaderInfo = zero;
-		shaderInfo.code = (u8*)shaderc_result_get_bytes(compile_result);
-		shaderInfo.code_size = shaderc_result_get_length(compile_result);
-		// shaderInfo.entrypoint = entry_point_arr[i];
-		shaderInfo.entrypoint = "main";
-		shaderInfo.format = SDL_GPU_SHADERFORMAT_SPIRV;
-		shaderInfo.stage = stage_arr[i];
-		shaderInfo.num_samplers = shader_data.sampler_count[i];
-		shaderInfo.num_uniform_buffers = shader_data.uniform_buffer_count[i];
-		shaderInfo.num_storage_buffers = shader_data.storage_buffer_count[i];
-		shaderInfo.num_storage_textures = shader_data.storage_texture_count[i];
+		if(make_shader) {
+			SDL_GPUShaderCreateInfo shaderInfo = zero;
+			shaderInfo.code = (u8*)shaderc_result_get_bytes(compile_result);
+			shaderInfo.code_size = shaderc_result_get_length(compile_result);
+			// shaderInfo.entrypoint = entry_point_arr[i];
+			shaderInfo.entrypoint = "main";
+			shaderInfo.format = SDL_GPU_SHADERFORMAT_SPIRV;
+			shaderInfo.stage = stage_arr[i];
+			shaderInfo.num_samplers = shader_data.sampler_count[i];
+			shaderInfo.num_uniform_buffers = shader_data.uniform_buffer_count[i];
+			shaderInfo.num_storage_buffers = shader_data.storage_buffer_count[i];
+			shaderInfo.num_storage_textures = shader_data.storage_texture_count[i];
 
-		result.shader_arr[i] = SDL_CreateGPUShader(g_device, &shaderInfo);
-		if(result.shader_arr[i] == null) {
-			SDL_Log("Failed to create shader!");
-			assert(false);
-			return zero;
+			result.shader_arr[i] = SDL_CreateGPUShader(g_device, &shaderInfo);
+			if(result.shader_arr[i] == null) {
+				SDL_Log("Failed to create shader!");
+			}
 		}
 	}
 	return result;
@@ -1729,4 +1740,10 @@ func SDL_EnumerationResult enumerate_directory_callback(void *userdata, const ch
 		}
 	}
 	return SDL_ENUM_CONTINUE;
+}
+
+func b8 is_shader_valid(s_shader_program program)
+{
+	b8 result = program.shader_arr[0] && program.shader_arr[1];
+	return result;
 }

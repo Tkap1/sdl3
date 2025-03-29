@@ -343,3 +343,4 @@ func void make_game_mesh_from_ply_mesh(s_mesh* mesh, s_ply_mesh* ply_mesh);
 func s_triangle make_triangle(s_v3 v0, s_v3 v1, s_v3 v2);
 func void draw_screen(s_v2 pos, s_v2 size, s_v4 color);
 func SDL_EnumerationResult enumerate_directory_callback(void *userdata, const char *dirname, const char *fname);
+func b8 is_shader_valid(s_shader_program program);
