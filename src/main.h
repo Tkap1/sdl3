@@ -311,7 +311,10 @@ func SDL_GPUGraphicsPipeline* create_pipeline(
 func s_m4 make_orthographic(float Left, float Right, float Bottom, float Top, float Near, float Far);
 func b8 SATCollision3D(s_shape shapeA, s_shape shapeB);
 func float get_triangle_height_at_xy(s_v3 t1, s_v3 t2, s_v3 t3, s_v2 p);
-func float max(float a, float b);
+
+template <typename t>
+func t max(t a, t b);
+
 func float at_most(float a, float b);
 func float sign(float x);
 func s_v3 v3_set_mag(s_v3 v, float mag);
@@ -339,3 +342,4 @@ func void arena_reset(s_linear_arena* arena);
 func void make_game_mesh_from_ply_mesh(s_mesh* mesh, s_ply_mesh* ply_mesh);
 func s_triangle make_triangle(s_v3 v0, s_v3 v1, s_v3 v2);
 func void draw_screen(s_v2 pos, s_v2 size, s_v4 color);
+func SDL_EnumerationResult enumerate_directory_callback(void *userdata, const char *dirname, const char *fname);

@@ -6,6 +6,7 @@
 
 #include <stdlib.h>
 #include <stdio.h>
+#include <stdarg.h>
 #include "SDL3/SDL.h"
 #include "shaderc/shaderc.h"
 
@@ -47,13 +48,13 @@ global s_list<s_mesh_instance_data, c_max_mesh_instances> g_mesh_instance_data_a
 global s_linear_arena g_frame_arena;
 global s_vertex g_terrain_vertex_arr[c_vertex_count];
 global shaderc_compiler_t g_shader_compiler;
+global SDL_Time g_last_shader_modify_time;
+global b8 g_reload_shaders = true;
 
 int main()
 {
 	g_frame_arena = make_arena_from_malloc(1024 * 1024 * 1024);
 	SDL_Init(SDL_INIT_VIDEO);
-
-	g_shader_compiler = shaderc_compiler_initialize();
 
 	g_player.pos.x = 10;
 	g_player.pos.y = 10;
@@ -91,64 +92,14 @@ int main()
 	// your device does not support any required depth texture format
 	assert(g_depth_texture_format != SDL_GPU_TEXTUREFORMAT_INVALID);
 
+	b8 left_down = false;
+	e_view_state view_state = e_view_state_default;
+
 	s_shader_program mesh_shader = zero;
 	s_shader_program depth_only_shader = zero;
-	{
-		s_shader_data data = zero;
-		data.sampler_count[1] = 1;
-		data.uniform_buffer_count[0] = 1;
-		data.uniform_buffer_count[1] = 1;
-		mesh_shader = load_shader("assets/mesh.shader", data);
-	}
-	{
-		s_shader_data data = zero;
-		data.uniform_buffer_count[0] = 1;
-		depth_only_shader = load_shader("assets/depth_only.shader", data);
-	}
-
-	b8 left_down = false;
-
 	SDL_GPUGraphicsPipeline* mesh_fill_pipeline = null;
 	SDL_GPUGraphicsPipeline* mesh_line_pipeline = null;
-	{
-		s_list<SDL_GPUVertexElementFormat, 16> vertex_attributes;
-		vertex_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3);
-		vertex_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3);
-		vertex_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4);
-		vertex_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_FLOAT2);
-		s_list<SDL_GPUVertexElementFormat, 16> instance_attributes;
-		instance_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4);
-		instance_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_INT);
-		instance_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4);
-		instance_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4);
-		instance_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4);
-		instance_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4);
-		mesh_fill_pipeline = create_pipeline(mesh_shader, SDL_GPU_FILLMODE_FILL, 1, vertex_attributes, instance_attributes, true);
-		mesh_line_pipeline = create_pipeline(mesh_shader, SDL_GPU_FILLMODE_LINE, 1, vertex_attributes, instance_attributes, true);
-	}
-
 	SDL_GPUGraphicsPipeline* mesh_depth_only_pipeline = null;
-	{
-		s_list<SDL_GPUVertexElementFormat, 16> vertex_attributes;
-		vertex_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3);
-		vertex_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3);
-		vertex_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4);
-		vertex_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_FLOAT2);
-		s_list<SDL_GPUVertexElementFormat, 16> instance_attributes;
-		instance_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4);
-		instance_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_INT);
-		instance_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4);
-		instance_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4);
-		instance_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4);
-		instance_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4);
-		mesh_depth_only_pipeline = create_pipeline(depth_only_shader, SDL_GPU_FILLMODE_FILL, 0, vertex_attributes, instance_attributes, true);
-	}
-
-	// Clean up shader resources
-	for(int i = 0; i < 2; i += 1) {
-		SDL_ReleaseGPUShader(g_device, depth_only_shader.shader_arr[i]);
-		SDL_ReleaseGPUShader(g_device, mesh_shader.shader_arr[i]);
-	}
 
 	{
 		SDL_GPUTextureCreateInfo info = zero;
@@ -162,8 +113,6 @@ int main()
 		info.usage = SDL_GPU_TEXTUREUSAGE_SAMPLER | SDL_GPU_TEXTUREUSAGE_DEPTH_STENCIL_TARGET;
 		scene_depth_texture = SDL_CreateGPUTexture(g_device, &info);
 	}
-
-	e_view_state view_state = e_view_state_default;
 
 	{
 		SDL_GPUTextureCreateInfo info = zero;
@@ -245,8 +194,6 @@ int main()
 
 	b8 generate_terrain = true;
 
-	shaderc_compiler_release(g_shader_compiler);
-
 	// vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv		loop start		vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv
 	b8 running = true;
 	float ticks_before = (float)SDL_GetTicks();
@@ -307,6 +254,81 @@ int main()
 				cam_pitch = clamp(cam_pitch, -c_pi * 0.4f, c_pi * 0.4f);
 			}
 		}
+
+		// vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv		hot shader reloading start		vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv
+		{
+			SDL_EnumerateDirectory("./assets", enumerate_directory_callback, null);
+			if(g_reload_shaders) {
+				g_reload_shaders = false;
+				g_shader_compiler = shaderc_compiler_initialize();
+				if(mesh_fill_pipeline) {
+					SDL_ReleaseGPUGraphicsPipeline(g_device, mesh_fill_pipeline);
+				}
+				if(mesh_line_pipeline) {
+					SDL_ReleaseGPUGraphicsPipeline(g_device, mesh_line_pipeline);
+				}
+				if(mesh_depth_only_pipeline) {
+					SDL_ReleaseGPUGraphicsPipeline(g_device, mesh_depth_only_pipeline);
+				}
+
+				{
+					s_shader_data data = zero;
+					data.sampler_count[1] = 1;
+					data.uniform_buffer_count[0] = 1;
+					data.uniform_buffer_count[1] = 1;
+					mesh_shader = load_shader("assets/mesh.shader", data);
+				}
+				{
+					s_shader_data data = zero;
+					data.uniform_buffer_count[0] = 1;
+					depth_only_shader = load_shader("assets/depth_only.shader", data);
+				}
+
+				{
+					s_list<SDL_GPUVertexElementFormat, 16> vertex_attributes;
+					vertex_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3);
+					vertex_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3);
+					vertex_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4);
+					vertex_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_FLOAT2);
+					s_list<SDL_GPUVertexElementFormat, 16> instance_attributes;
+					instance_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4);
+					instance_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_INT);
+					instance_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4);
+					instance_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4);
+					instance_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4);
+					instance_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4);
+					mesh_fill_pipeline = create_pipeline(mesh_shader, SDL_GPU_FILLMODE_FILL, 1, vertex_attributes, instance_attributes, true);
+					mesh_line_pipeline = create_pipeline(mesh_shader, SDL_GPU_FILLMODE_LINE, 1, vertex_attributes, instance_attributes, true);
+				}
+
+				{
+					s_list<SDL_GPUVertexElementFormat, 16> vertex_attributes;
+					vertex_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3);
+					vertex_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3);
+					vertex_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4);
+					vertex_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_FLOAT2);
+					s_list<SDL_GPUVertexElementFormat, 16> instance_attributes;
+					instance_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4);
+					instance_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_INT);
+					instance_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4);
+					instance_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4);
+					instance_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4);
+					instance_attributes.add(SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4);
+					mesh_depth_only_pipeline = create_pipeline(depth_only_shader, SDL_GPU_FILLMODE_FILL, 0, vertex_attributes, instance_attributes, true);
+				}
+
+				// Clean up shader resources
+				for(int i = 0; i < 2; i += 1) {
+					SDL_ReleaseGPUShader(g_device, depth_only_shader.shader_arr[i]);
+					SDL_ReleaseGPUShader(g_device, mesh_shader.shader_arr[i]);
+				}
+
+				shaderc_compiler_release(g_shader_compiler);
+				g_shader_compiler = null;
+
+			}
+		}
+		// ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^		hot shader reloading end		^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 
 		s_v3 cam_front = v3(
@@ -1274,9 +1296,10 @@ func float get_triangle_height_at_xy(s_v3 t1, s_v3 t2, s_v3 t3, s_v2 p)
 	}
 }
 
-func float max(float a, float b)
+template <typename t>
+func t max(t a, t b)
 {
-	float result = a >= b ? a : b;
+	t result = a >= b ? a : b;
 	return result;
 }
 
@@ -1676,4 +1699,34 @@ func void draw_screen(s_v2 pos, s_v2 size, s_v4 color)
 	model = m4_multiply(model, m4_scale(v3(size, 1)));
 	int flags = e_render_flag_ignore_fog | e_render_flag_ignore_light | e_render_flag_dont_cast_shadows | e_render_flag_screen | e_render_flag_textured;
 	draw_mesh_screen(e_mesh_quad, model, color, flags);
+}
+
+func char* format_text(char* str, ...)
+{
+	static int index = 0;
+	static char buffer[4][1024] = zero;
+	va_list args;
+	va_start(args, str);
+	int written = vsnprintf(buffer[index], 1024, str, args);
+	assert(written > 0);
+	va_end(args);
+	char* result = buffer[index];
+	index = (index + 1) % 4;
+	return result;
+}
+
+func SDL_EnumerationResult enumerate_directory_callback(void *userdata, const char *dirname, const char *fname)
+{
+	(void)dirname;
+	(void)userdata;
+	if(strstr(fname, ".shader")) {
+		char* str = format_text("assets/%s", fname);
+		SDL_PathInfo info = zero;
+		SDL_GetPathInfo(str, &info);
+		if(info.modify_time > g_last_shader_modify_time) {
+			g_last_shader_modify_time = max(g_last_shader_modify_time, info.modify_time);
+			g_reload_shaders = true;
+		}
+	}
+	return SDL_ENUM_CONTINUE;
 }
