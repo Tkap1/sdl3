@@ -1747,3 +1747,10 @@ func b8 is_shader_valid(s_shader_program program)
 	b8 result = program.shader_arr[0] && program.shader_arr[1];
 	return result;
 }
+
+func void draw_rect_screen(s_v2 pos, s_v2 size, s_v4 color)
+{
+	s_m4 model = m4_translate(v3(pos, 0));
+	model = m4_multiply(model, m4_scale(v3(size, 1)));
+	draw_mesh_screen(e_mesh_quad, model, color, 0);
+}
