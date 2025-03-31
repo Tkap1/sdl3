@@ -1,7 +1,7 @@
 
 #define array_count(arr) (sizeof((arr)) / sizeof((arr)[0]))
 #define invalid_default_case default: { assert(false); }
-#define assert(condition) if(!(condition)) { printf("Failed assert %s(%i)\n", __FILE__, __LINE__); __debugbreak(); }
+#define assert(condition) if(!(condition)) { on_failed_assert(#condition, __FILE__, __LINE__); }
 
 union s_m4
 {
@@ -54,6 +54,13 @@ enum e_view_state
 	e_view_state_default,
 	e_view_state_shadow_map,
 	e_view_state_depth,
+};
+
+enum e_ui_flag
+{
+	e_ui_flag_draggable = 1 << 0,
+	e_ui_flag_clickable = 1 << 1,
+	e_ui_flag_dynamic = 1 << 2,
 };
 
 struct s_v2
@@ -121,6 +128,7 @@ struct s_list
 	t data[n];
 	t& operator[](int index);
 	t* add(t new_element);
+	t pop_last();
 };
 
 #pragma pack(push, 1)
@@ -207,11 +215,42 @@ struct s_speed_buff
 	b8 hit_arr[2];
 };
 
+struct s_ui_widget
+{
+	int flags;
+	int parent;
+	int type;
+	int depth;
+	s_v2 pos;
+	s_v2 size;
+
+	s_v2 out_pos;
+	s_v2 out_size;
+};
+
+struct s_ui
+{
+	int hovered;
+	int depth;
+	b8 clicked_arr[64];
+	s_list<s_ui_widget, 64> widget_arr;
+	s_list<int, 64> stack_arr;
+};
+
+// -----------------------------------------------------------------------------------------------------------------------------
 func constexpr s_v2 v2(float x, float y)
 {
 	s_v2 result = zero;
 	result.x = x;
 	result.y = y;
+	return result;
+}
+
+func constexpr s_v2 v2(float x)
+{
+	s_v2 result = zero;
+	result.x = x;
+	result.y = x;
 	return result;
 }
 
@@ -244,12 +283,36 @@ func constexpr s_v4 v4(A x, B y, C z, D w)
 	return {(float)x, (float)y, (float)z, (float)w};
 }
 
+func constexpr s_v2 operator+(s_v2 a, s_v2 b)
+{
+	return v2(
+		a.x + b.x,
+		a.y + b.y
+	);
+}
+
+func constexpr s_v2 operator-(s_v2 a, s_v2 b)
+{
+	return v2(
+		a.x - b.x,
+		a.y - b.y
+	);
+}
+
 func constexpr s_v3 operator+(s_v3 a, s_v3 b)
 {
 	return v3(
 		a.x + b.x,
 		a.y + b.y,
 		a.z + b.z
+	);
+}
+
+func constexpr s_v2 operator*(s_v2 a, float b)
+{
+	return v2(
+		a.x * b,
+		a.y * b
 	);
 }
 
@@ -271,6 +334,24 @@ func constexpr s_v3 operator/(s_v3 a, float b)
 	);
 }
 
+func void operator+=(s_v2& a, s_v2 b)
+{
+	a.x += b.x;
+	a.y += b.y;
+}
+
+func void operator-=(s_v2& a, s_v2 b)
+{
+	a.x -= b.x;
+	a.y -= b.y;
+}
+
+func void operator*=(s_v2& a, float b)
+{
+	a.x *= b;
+	a.y *= b;
+}
+
 func void operator+=(s_v3& a, s_v3 b)
 {
 	a.x += b.x;
@@ -284,6 +365,7 @@ func void operator-=(s_v3& a, s_v3 b)
 	a.y -= b.y;
 	a.z -= b.z;
 }
+// -----------------------------------------------------------------------------------------------------------------------------
 
 func s_shader_program load_shader(char* path, s_shader_data shader_data);
 func s_m4 m4_identity();
@@ -344,4 +426,14 @@ func s_triangle make_triangle(s_v3 v0, s_v3 v1, s_v3 v2);
 func void draw_screen(s_v2 pos, s_v2 size, s_v4 color);
 func SDL_EnumerationResult enumerate_directory_callback(void *userdata, const char *dirname, const char *fname);
 func b8 is_shader_valid(s_shader_program program);
-func void draw_rect_screen(s_v2 pos, s_v2 size, s_v4 color);
+func void draw_quad_screen(s_v2 pos, float z, s_v2 size, s_v4 color);
+func b8 ui_push_widget(s_v2 pos, s_v2 size, int flags);
+func void ui_pop_widget();
+func b8 ui_widget(int flags);
+func b8 rect_vs_rect_topleft(s_v2 pos0, s_v2 size0, s_v2 pos1, s_v2 size1);
+func b8 mouse_vs_rect_topleft(s_v2 pos, s_v2 size);
+func s_v4 multiply_rgb(s_v4 a, float b);
+func void process_ui();
+func void ui_process_size(int widget_i, s_v2 size);
+func void ui_process_pos(int curr_i, s_v2 pos);
+func void on_failed_assert(char* condition, char* file, int line);

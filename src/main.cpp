@@ -14,7 +14,13 @@
 #include "FastNoiseLite.h"
 
 #include "tk_types.h"
+
+#ifdef _WIN32
 #include "intrin.h"
+#else
+#include "immintrin.h"
+#endif
+
 #include "main.h"
 
 global SDL_GPUTexture* scene_depth_texture;
@@ -50,6 +56,12 @@ global s_vertex g_terrain_vertex_arr[c_vertex_count];
 global shaderc_compiler_t g_shader_compiler;
 global SDL_Time g_last_shader_modify_time;
 global b8 g_reload_shaders = true;
+global s_ui g_ui;
+global s_v2 g_mouse;
+global b8 g_left_down = false;
+global b8 g_left_down_this_frame = false;
+global constexpr float c_margin = 8;
+global constexpr float c_padding = 8;
 
 int main()
 {
@@ -92,7 +104,6 @@ int main()
 	// your device does not support any required depth texture format
 	assert(g_depth_texture_format != SDL_GPU_TEXTUREFORMAT_INVALID);
 
-	b8 left_down = false;
 	e_view_state view_state = e_view_state_default;
 
 	s_shader_program mesh_shader = zero;
@@ -157,7 +168,7 @@ int main()
 			constexpr float c_size = 0.5f;
 			vertex_arr[0].pos = v3(-c_size, -c_size, 0.0f);
 			vertex_arr[0].normal = v3(0, -1, 0);
-			vertex_arr[0].color = make_color(0, 1, 0);
+			vertex_arr[0].color = make_color(1);
 			vertex_arr[0].uv = v2(0, 0);
 			vertex_arr[1].pos = v3(c_size, -c_size, 0.0f);
 			vertex_arr[1].normal = v3(0, -1, 0);
@@ -165,7 +176,7 @@ int main()
 			vertex_arr[1].uv = v2(1, 0);
 			vertex_arr[2].pos = v3(c_size, c_size, 0.0f);
 			vertex_arr[2].normal = v3(0, -1, 0);
-			vertex_arr[2].color = make_color(1, 0, 0);
+			vertex_arr[2].color = make_color(1);
 			vertex_arr[2].uv = v2(1, 1);
 			vertex_arr[3].pos = v3(-c_size, -c_size, 0.0f);
 			vertex_arr[3].normal = v3(0, -1, 0);
@@ -205,6 +216,8 @@ int main()
 		ticks_before = ticks;
 		SDL_Event event = zero;
 
+		g_left_down_this_frame = false;
+
 		while(SDL_PollEvent(&event)) {
 			if(event.type == SDL_EVENT_QUIT) {
 				running = false;
@@ -238,13 +251,14 @@ int main()
 			}
 			else if(event.type == SDL_EVENT_MOUSE_BUTTON_DOWN) {
 				if(event.button.button == SDL_BUTTON_LEFT) {
-					left_down = true;
+					g_left_down = true;
+					g_left_down_this_frame = true;
 					g_player.want_to_shoot_timestamp = g_time;
 				}
 			}
 			else if(event.type == SDL_EVENT_MOUSE_BUTTON_UP) {
 				if(event.button.button == SDL_BUTTON_LEFT) {
-					left_down = false;
+					g_left_down = false;
 				}
 			}
 			else if(event.type == SDL_EVENT_MOUSE_MOTION) {
@@ -254,6 +268,8 @@ int main()
 				cam_pitch = clamp(cam_pitch, -c_pi * 0.4f, c_pi * 0.4f);
 			}
 		}
+
+		SDL_GetGlobalMouseState(&g_mouse.x, &g_mouse.y);
 
 		// vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv		hot shader reloading start		vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv
 		{
@@ -658,6 +674,28 @@ int main()
 			SDL_Log("WaitAndAcquireGPUSwapchainTexture failed: %s", SDL_GetError());
 			return -1;
 		}
+
+		// vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv		ui start		vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv
+		#if 0
+		{
+			ui_push_widget(v2(300), v2(300), e_ui_flag_clickable);
+
+			ui_push_widget(zero, zero, e_ui_flag_clickable);
+				ui_widget(e_ui_flag_clickable | e_ui_flag_dynamic);
+				ui_widget(e_ui_flag_clickable | e_ui_flag_dynamic);
+			ui_pop_widget();
+
+			ui_push_widget(zero, zero, e_ui_flag_clickable);
+				ui_widget(e_ui_flag_clickable | e_ui_flag_dynamic);
+				ui_widget(e_ui_flag_clickable | e_ui_flag_dynamic);
+				ui_widget(e_ui_flag_clickable | e_ui_flag_dynamic);
+			ui_pop_widget();
+
+			ui_pop_widget();
+
+		}
+		#endif
+		// ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^		ui end		^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 		if(swapchain_texture != null) {
 
@@ -1492,6 +1530,15 @@ t& s_list<t, n>::operator[](int index)
 }
 
 template <typename t, int n>
+t s_list<t, n>::pop_last()
+{
+	assert(this->count > 0);
+	this->count -= 1;
+	t result = this->data[this->count];
+	return result;
+}
+
+template <typename t, int n>
 t* s_list<t, n>::add(t new_element)
 {
 	assert(count < n);
@@ -1748,9 +1795,262 @@ func b8 is_shader_valid(s_shader_program program)
 	return result;
 }
 
-func void draw_rect_screen(s_v2 pos, s_v2 size, s_v4 color)
+func void draw_quad_screen(s_v2 pos, float z, s_v2 size, s_v4 color)
 {
-	s_m4 model = m4_translate(v3(pos, 0));
+	s_m4 model = m4_translate(v3(pos, -99 + z));
 	model = m4_multiply(model, m4_scale(v3(size, 1)));
 	draw_mesh_screen(e_mesh_quad, model, color, 0);
+}
+
+func void draw_quad_screen_topleft(s_v2 pos, float z, s_v2 size, s_v4 color)
+{
+	pos += size * 0.5f;
+	s_m4 model = m4_translate(v3(pos, -99 + z));
+	model = m4_multiply(model, m4_scale(v3(size, 1)));
+	draw_mesh_screen(e_mesh_quad, model, color, 0);
+}
+
+func b8 ui_push_widget(s_v2 pos, s_v2 size, int flags)
+{
+	s_ui_widget new_widget = zero;
+	new_widget.depth = g_ui.depth;
+	new_widget.type = 0;
+	new_widget.pos = pos;
+	new_widget.parent = -1;
+	new_widget.flags = flags;
+	for(int i = 0; i < g_ui.widget_arr.count; i += 1) {
+		s_ui_widget widget = g_ui.widget_arr[i];
+		if(widget.depth == g_ui.depth - 1) {
+			new_widget.parent = i;
+			break;
+		}
+	}
+	new_widget.size = size;
+	g_ui.depth += 1;
+	g_ui.widget_arr.add(new_widget);
+	g_ui.stack_arr.add(g_ui.widget_arr.count - 1);
+	b8 result = g_ui.clicked_arr[g_ui.widget_arr.count - 1];
+	return result;
+}
+
+func void ui_pop_widget()
+{
+	assert(g_ui.widget_arr.count > 0);
+	assert(g_ui.stack_arr.count > 0);
+	memset(g_ui.clicked_arr, false, sizeof(g_ui.clicked_arr));
+
+	int popped_index = g_ui.stack_arr.pop_last();
+	s_ui_widget* popped = &g_ui.widget_arr[popped_index];
+
+	b8 handle = g_ui.depth == 1;
+
+
+	s_m4 azenris = zero;
+
+	srand(1);
+
+	if(handle) {
+
+		popped->out_size = popped->size;
+		popped->out_pos = popped->pos;
+		ui_process_size(popped_index, popped->size);
+		ui_process_pos(popped_index, popped->pos);
+
+		int hovered_depth = -1;
+		int hovered_i = -1;
+		for(int widget_i = 0; widget_i < g_ui.widget_arr.count; widget_i += 1) {
+			s_ui_widget widget = g_ui.widget_arr[widget_i];
+			b8 hovered = (widget.flags & e_ui_flag_clickable) && mouse_vs_rect_topleft(widget.out_pos, widget.out_size);
+			if(hovered && widget.depth > hovered_depth) {
+				hovered_depth = widget.depth;
+				hovered_i = widget_i;
+			}
+		}
+
+		for(int widget_i = 0; widget_i < g_ui.widget_arr.count; widget_i += 1) {
+			s_ui_widget widget = g_ui.widget_arr[widget_i];
+			float f = rand() / (float)RAND_MAX;
+			s_v4 color = make_color(f);
+			s_v2 size = widget.out_size;
+			if(hovered_i == widget_i) {
+				color = multiply_rgb(color, 1.33f);
+				color = make_color(0, 1, 0);
+				// size.x += 200;
+			}
+			draw_quad_screen_topleft(widget.out_pos, (float)widget.depth, size, color);
+		}
+
+		g_ui.widget_arr.count = 0;
+
+		#if 0
+		int first_index = 0;
+		s_ui_widget popped = zero;
+
+		for(int i = 0; i < g_ui.widget_arr.count; i += 1) {
+			s_ui_widget widget = g_ui.widget_arr[i];
+			if(widget.depth == g_ui.depth - 1) {
+				first_index = i;
+				popped = widget;
+				break;
+			}
+		}
+		int children_count = g_ui.widget_arr.count - (first_index + 1);
+
+		int hovered_widget = -1;
+		int hovered_depth = -1;
+		for(int pass_i = 0; pass_i < 2; pass_i += 1) {
+			s_v2 pos = popped.pos;
+			for(int i = first_index; i < g_ui.widget_arr.count; i += 1) {
+				s_ui_widget widget = g_ui.widget_arr[i];
+				s_v2 size = zero;
+				s_v4 color = zero;
+				s_v2 advance = zero;
+				if(i == first_index) {
+					size = widget.size;
+					color = make_color(0.33f);
+					advance.x = c_padding;
+					advance.y = c_padding;
+				}
+				else {
+					size = v2(popped.size.x - c_padding * 2, (popped.size.y - c_padding * 2) / (children_count + 1));
+					color = make_color(0.66f);
+					advance.y = size.y + c_padding;
+				}
+				if(pass_i == 0) {
+					b8 hovered = (widget.flags & e_ui_flag_clickable) && mouse_vs_rect_topleft(pos, size);
+					if(hovered) {
+						if(widget.depth > hovered_depth) {
+							hovered_depth = widget.depth;
+							hovered_widget = i;
+						}
+					}
+				}
+				if(pass_i == 1) {
+					s_v2 final_size = size;
+					if(hovered_widget == i) {
+						color = multiply_rgb(color, 1.33f);
+						if(widget.flags & e_ui_flag_dynamic) {
+							final_size *= 1.1f;
+						}
+
+						if(g_left_down_this_frame) {
+							g_ui.clicked_arr[i] = true;
+						}
+					}
+					s_v2 final_pos = pos;
+					s_v2 diff = final_size - size;
+					final_pos -= diff * 0.5f;
+					draw_quad_screen_topleft(final_pos, (float)widget.depth, final_size, color);
+				}
+				pos += advance;
+			}
+		}
+		g_ui.widget_arr.count -= children_count + 1;
+		#endif
+	}
+
+	g_ui.depth -= 1;
+}
+
+func b8 ui_widget(int flags)
+{
+	s_ui_widget new_widget = zero;
+	new_widget.depth = g_ui.depth;
+	new_widget.type = 1;
+	new_widget.parent = -1;
+	new_widget.flags = flags;
+	for(int i = 0; i < g_ui.widget_arr.count; i += 1) {
+		s_ui_widget widget = g_ui.widget_arr[i];
+		if(widget.depth == g_ui.depth - 1) {
+			new_widget.parent = i;
+			break;
+		}
+	}
+	g_ui.widget_arr.add(new_widget);
+	b8 result = g_ui.clicked_arr[g_ui.widget_arr.count - 1];
+	return result;
+}
+
+func b8 rect_vs_rect_topleft(s_v2 pos0, s_v2 size0, s_v2 pos1, s_v2 size1)
+{
+	b8 result = pos0.x + size0.x > pos1.x && pos0.x < pos1.x + size1.x &&
+		pos0.y + size0.y > pos1.y && pos0.y < pos1.y + size1.y;
+	return result;
+}
+
+func b8 mouse_vs_rect_topleft(s_v2 pos, s_v2 size)
+{
+	b8 result = rect_vs_rect_topleft(g_mouse, v2(1, 1), pos, size);
+	return result;
+}
+
+func s_v4 multiply_rgb(s_v4 a, float b)
+{
+	a.x = at_most(1.0f, a.x * b);
+	a.y = at_most(1.0f, a.y * b);
+	a.z = at_most(1.0f, a.z * b);
+	return a;
+}
+
+func void ui_process_size(int curr_i, s_v2 size)
+{
+	int direct_children = 0;
+	s_ui_widget* curr_widget = &g_ui.widget_arr[curr_i];
+	curr_widget->out_size = size;
+	for(int widget_i = curr_i + 1; widget_i < g_ui.widget_arr.count; widget_i += 1) {
+		s_ui_widget widget = g_ui.widget_arr[widget_i];
+		if(widget.depth <= curr_widget->depth) { break; }
+		if(widget.depth != curr_widget->depth + 1) { continue; }
+		direct_children += 1;
+	}
+
+	s_v2 children_size = v2(
+		curr_widget->out_size.x - c_margin * 2,
+		(curr_widget->out_size.y - c_margin * 2 - (c_padding * (direct_children - 1))) / direct_children
+	);
+
+	for(int widget_i = curr_i + 1; widget_i < g_ui.widget_arr.count; widget_i += 1) {
+		s_ui_widget widget = g_ui.widget_arr[widget_i];
+		if(widget.depth <= curr_widget->depth) { break; }
+		if(widget.depth != curr_widget->depth + 1) { continue; }
+		ui_process_size(widget_i, children_size);
+	}
+}
+
+func void ui_process_pos(int curr_i, s_v2 pos)
+{
+	int direct_children = 0;
+	s_ui_widget* curr_widget = &g_ui.widget_arr[curr_i];
+	curr_widget->out_pos = pos;
+
+	s_v2 curr_pos = pos + v2(c_margin);
+
+	for(int widget_i = curr_i + 1; widget_i < g_ui.widget_arr.count; widget_i += 1) {
+		s_ui_widget widget = g_ui.widget_arr[widget_i];
+		if(widget.depth <= curr_widget->depth) { break; }
+		if(widget.depth != curr_widget->depth + 1) { continue; }
+		direct_children += 1;
+	}
+
+	for(int widget_i = curr_i + 1; widget_i < g_ui.widget_arr.count; widget_i += 1) {
+		s_ui_widget widget = g_ui.widget_arr[widget_i];
+		if(widget.depth <= curr_widget->depth) { break; }
+		if(widget.depth != curr_widget->depth + 1) { continue; }
+		ui_process_pos(widget_i, curr_pos);
+		curr_pos.y += widget.out_size.y + c_padding;
+	}
+
+}
+
+func void on_failed_assert(char* condition, char* file, int line)
+{
+	printf("Failed assert at %s(%i)\n", file, line);
+	printf("\t%s\n", condition);
+	printf("-----------------------------\n");
+
+	#ifdef _WIN32
+	__debugbreak();
+	#else
+	*(int*)0 = 0;
+	#endif
 }
