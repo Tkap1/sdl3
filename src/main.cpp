@@ -27,8 +27,8 @@ global SDL_GPUTexture* scene_depth_texture;
 global SDL_GPUTexture* shadow_texture;
 global SDL_GPUSampler* shadow_texture_sampler;
 global b8 g_do_wireframe = false;
-global constexpr int c_tiles_x = 512;
-global constexpr int c_tiles_y = 512;
+global constexpr int c_tiles_x = 32;
+global constexpr int c_tiles_y = 32;
 global constexpr int c_vertex_count = c_tiles_x * c_tiles_y * 6;
 global constexpr float c_tile_size = 1.0f;
 global float g_time = 0;
@@ -43,7 +43,6 @@ global float cam_pitch;
 global SDL_GPUDevice* g_device;
 global SDL_Window* g_window;
 global SDL_GPUTextureFormat g_depth_texture_format = SDL_GPU_TEXTUREFORMAT_INVALID;
-global s_speed_buff g_speed_buff;
 global float g_last_speed_time = 0;
 global constexpr s_v3 c_player_size = v3(0.1f, 0.1f, 6.0f);
 global constexpr int c_max_mesh_instances = 1024;
@@ -56,17 +55,22 @@ global s_vertex g_terrain_vertex_arr[c_vertex_count];
 global shaderc_compiler_t g_shader_compiler;
 global SDL_Time g_last_shader_modify_time;
 global b8 g_reload_shaders = true;
-global s_ui g_ui;
+global s_ui g_ui = {.hot_index = -1};
 global s_v2 g_mouse;
+global s_v2 g_mouse_delta;
 global b8 g_left_down = false;
 global b8 g_left_down_this_frame = false;
 global constexpr float c_margin = 8;
 global constexpr float c_padding = 8;
+global SDL_AudioStream* g_audio_stream;
+global s_list<s_playing_sound, 64> g_sound_to_play_arr;
+global s_sound g_sound_pop;
+global s_sound g_sound_cakez;
 
 int main()
 {
 	g_frame_arena = make_arena_from_malloc(1024 * 1024 * 1024);
-	SDL_Init(SDL_INIT_VIDEO);
+	SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO);
 
 	g_player.pos.x = 10;
 	g_player.pos.y = 10;
@@ -82,6 +86,21 @@ int main()
 
 	g_window = SDL_CreateWindow("3D", c_window_width, c_window_height, 0);
 	SDL_ClaimWindowForGPUDevice(g_device, g_window);
+
+
+	SDL_AudioStream* audio = null;
+	{
+		SDL_AudioSpec src_spec = zero;
+		src_spec.format = SDL_AUDIO_S16LE;
+		src_spec.channels = 2;
+		src_spec.freq = 44100;
+		audio = SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &src_spec, audio_callback, null);
+		assert(audio);
+		SDL_ResumeAudioStreamDevice(audio);
+
+		g_sound_pop = load_sound("assets/pop.wav");
+		g_sound_cakez = load_sound("assets/cakez.wav");
+	}
 
 	// prefered depth texture format in order of preference
 	SDL_GPUTextureFormat prefered_depth_formats[] = {
@@ -153,7 +172,7 @@ int main()
 
 	s_v3 cam_pos = g_player.pos;
 
-	SDL_SetWindowRelativeMouseMode(g_window, true);
+	// SDL_SetWindowRelativeMouseMode(g_window, true);
 
 	// vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv		make meshes start		vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv
 	{
@@ -205,6 +224,7 @@ int main()
 
 	b8 generate_terrain = true;
 
+
 	// vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv		loop start		vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv
 	b8 running = true;
 	float ticks_before = (float)SDL_GetTicks();
@@ -217,6 +237,7 @@ int main()
 		SDL_Event event = zero;
 
 		g_left_down_this_frame = false;
+		g_mouse_delta = zero;
 
 		while(SDL_PollEvent(&event)) {
 			if(event.type == SDL_EVENT_QUIT) {
@@ -269,7 +290,12 @@ int main()
 			}
 		}
 
-		SDL_GetGlobalMouseState(&g_mouse.x, &g_mouse.y);
+		{
+			s_v2 temp;
+			SDL_GetGlobalMouseState(&temp.x, &temp.y);
+			g_mouse_delta = temp - g_mouse;
+			g_mouse = temp;
+		}
 
 		// vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv		hot shader reloading start		vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv
 		{
@@ -571,14 +597,6 @@ int main()
 				}
 			}
 
-			{
-				float passed = g_time - g_last_speed_time;
-				if(passed > 0.25f && !g_speed_buff.active) {
-					g_speed_buff = zero;
-					g_speed_buff.active = true;
-					g_speed_buff.start_yaw = cam_yaw;
-				}
-			}
 
 			{
 				s_v3 gravity = v3(0, 0, -0.006);
@@ -676,19 +694,21 @@ int main()
 		}
 
 		// vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv		ui start		vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv
-		#if 0
+		#if 1
 		{
-			ui_push_widget(v2(300), v2(300), e_ui_flag_clickable);
+			if(ui_push_widget(v2(300), v2(300), e_ui_flag_clickable | e_ui_flag_resizable)) {
+			}
 
 			ui_push_widget(zero, zero, e_ui_flag_clickable);
-				ui_widget(e_ui_flag_clickable | e_ui_flag_dynamic);
-				ui_widget(e_ui_flag_clickable | e_ui_flag_dynamic);
+				if(ui_widget(e_ui_flag_clickable | e_ui_flag_dynamic, zero)) {
+				}
+				ui_widget(e_ui_flag_clickable | e_ui_flag_dynamic, zero);
 			ui_pop_widget();
 
 			ui_push_widget(zero, zero, e_ui_flag_clickable);
-				ui_widget(e_ui_flag_clickable | e_ui_flag_dynamic);
-				ui_widget(e_ui_flag_clickable | e_ui_flag_dynamic);
-				ui_widget(e_ui_flag_clickable | e_ui_flag_dynamic);
+				ui_widget(e_ui_flag_clickable | e_ui_flag_dynamic, zero);
+				ui_widget(e_ui_flag_clickable | e_ui_flag_dynamic, zero);
+				ui_widget(e_ui_flag_clickable | e_ui_flag_dynamic, zero);
 			ui_pop_widget();
 
 			ui_pop_widget();
@@ -1069,9 +1089,10 @@ func float v3_dot(s_v3 a, s_v3 b)
 	return (Result);
 }
 
-func float clamp(float curr, float min_val, float max_val)
+template <typename t>
+func t clamp(t curr, t min_val, t max_val)
 {
-	float result = curr;
+	t result = curr;
 	if(curr < min_val) {
 		result = min_val;
 	}
@@ -1548,6 +1569,14 @@ t* s_list<t, n>::add(t new_element)
 	return result;
 }
 
+template <typename t, int n>
+void s_list<t, n>::remove_and_swap(int index)
+{
+	assert(index < count);
+	this->count -= 1;
+	this->data[index] = this->data[this->count];
+}
+
 func u8* read_file(char* path)
 {
 	FILE* file = fopen(path, "rb");
@@ -1810,11 +1839,11 @@ func void draw_quad_screen_topleft(s_v2 pos, float z, s_v2 size, s_v4 color)
 	draw_mesh_screen(e_mesh_quad, model, color, 0);
 }
 
-func b8 ui_push_widget(s_v2 pos, s_v2 size, int flags)
+func int ui_push_widget(s_v2 pos, s_v2 size, int flags)
 {
+	int my_index = g_ui.widget_arr.count;
 	s_ui_widget new_widget = zero;
 	new_widget.depth = g_ui.depth;
-	new_widget.type = 0;
 	new_widget.pos = pos;
 	new_widget.parent = -1;
 	new_widget.flags = flags;
@@ -1825,11 +1854,20 @@ func b8 ui_push_widget(s_v2 pos, s_v2 size, int flags)
 			break;
 		}
 	}
-	new_widget.size = size;
+	if(g_ui.data_arr[my_index].size.x <= 0) {
+		g_ui.data_arr[my_index].size = size;
+	}
 	g_ui.depth += 1;
 	g_ui.widget_arr.add(new_widget);
 	g_ui.stack_arr.add(g_ui.widget_arr.count - 1);
-	b8 result = g_ui.clicked_arr[g_ui.widget_arr.count - 1];
+
+	int result = 0;
+	if(g_ui.hot_index == my_index) {
+		result = g_ui.hot_state;
+		if(result & e_ui_state_clicked) {
+			play_sound(g_sound_pop, false);
+		}
+	}
 	return result;
 }
 
@@ -1837,23 +1875,32 @@ func void ui_pop_widget()
 {
 	assert(g_ui.widget_arr.count > 0);
 	assert(g_ui.stack_arr.count > 0);
-	memset(g_ui.clicked_arr, false, sizeof(g_ui.clicked_arr));
 
 	int popped_index = g_ui.stack_arr.pop_last();
 	s_ui_widget* popped = &g_ui.widget_arr[popped_index];
 
 	b8 handle = g_ui.depth == 1;
 
-
-	s_m4 azenris = zero;
-
-	srand(1);
+	if(popped->flags & e_ui_flag_resizable) {
+		if(ui_widget(e_ui_flag_clickable | e_ui_flag_dynamic, {.bottom_right = true, .size = v2(24)}) == e_ui_state_pressed) {
+			s_v2* size = &g_ui.data_arr[popped_index].size;
+			size->x += g_mouse_delta.x;
+			size->y += g_mouse_delta.y;
+		}
+	}
 
 	if(handle) {
 
-		popped->out_size = popped->size;
+		g_ui.hot_state &= ~e_ui_state_clicked;
+		if(!g_left_down) {
+			g_ui.hot_state &= ~e_ui_state_pressed;
+		}
+
+		srand(1); // nocheckin
+
+		popped->out_size = g_ui.data_arr[popped_index].size;
 		popped->out_pos = popped->pos;
-		ui_process_size(popped_index, popped->size);
+		ui_process_size(popped_index, g_ui.data_arr[popped_index].size);
 		ui_process_pos(popped_index, popped->pos);
 
 		int hovered_depth = -1;
@@ -1861,6 +1908,9 @@ func void ui_pop_widget()
 		for(int widget_i = 0; widget_i < g_ui.widget_arr.count; widget_i += 1) {
 			s_ui_widget widget = g_ui.widget_arr[widget_i];
 			b8 hovered = (widget.flags & e_ui_flag_clickable) && mouse_vs_rect_topleft(widget.out_pos, widget.out_size);
+			if(g_ui.hot_index >= 0 && g_ui.hot_state & e_ui_state_pressed && g_ui.hot_index != widget_i) {
+				hovered = false;
+			}
 			if(hovered && widget.depth > hovered_depth) {
 				hovered_depth = widget.depth;
 				hovered_i = widget_i;
@@ -1873,92 +1923,35 @@ func void ui_pop_widget()
 			s_v4 color = make_color(f);
 			s_v2 size = widget.out_size;
 			if(hovered_i == widget_i) {
-				color = multiply_rgb(color, 1.33f);
+				// color = multiply_rgb(color, 1.33f);
 				color = make_color(0, 1, 0);
 				// size.x += 200;
+				if(g_left_down_this_frame) {
+					g_ui.hot_state |= e_ui_state_pressed | e_ui_state_clicked;
+					g_ui.hot_index = widget_i;
+				}
 			}
 			draw_quad_screen_topleft(widget.out_pos, (float)widget.depth, size, color);
 		}
 
+		if(g_ui.hot_state == 0) {
+			g_ui.hot_index = -1;
+		}
+
 		g_ui.widget_arr.count = 0;
-
-		#if 0
-		int first_index = 0;
-		s_ui_widget popped = zero;
-
-		for(int i = 0; i < g_ui.widget_arr.count; i += 1) {
-			s_ui_widget widget = g_ui.widget_arr[i];
-			if(widget.depth == g_ui.depth - 1) {
-				first_index = i;
-				popped = widget;
-				break;
-			}
-		}
-		int children_count = g_ui.widget_arr.count - (first_index + 1);
-
-		int hovered_widget = -1;
-		int hovered_depth = -1;
-		for(int pass_i = 0; pass_i < 2; pass_i += 1) {
-			s_v2 pos = popped.pos;
-			for(int i = first_index; i < g_ui.widget_arr.count; i += 1) {
-				s_ui_widget widget = g_ui.widget_arr[i];
-				s_v2 size = zero;
-				s_v4 color = zero;
-				s_v2 advance = zero;
-				if(i == first_index) {
-					size = widget.size;
-					color = make_color(0.33f);
-					advance.x = c_padding;
-					advance.y = c_padding;
-				}
-				else {
-					size = v2(popped.size.x - c_padding * 2, (popped.size.y - c_padding * 2) / (children_count + 1));
-					color = make_color(0.66f);
-					advance.y = size.y + c_padding;
-				}
-				if(pass_i == 0) {
-					b8 hovered = (widget.flags & e_ui_flag_clickable) && mouse_vs_rect_topleft(pos, size);
-					if(hovered) {
-						if(widget.depth > hovered_depth) {
-							hovered_depth = widget.depth;
-							hovered_widget = i;
-						}
-					}
-				}
-				if(pass_i == 1) {
-					s_v2 final_size = size;
-					if(hovered_widget == i) {
-						color = multiply_rgb(color, 1.33f);
-						if(widget.flags & e_ui_flag_dynamic) {
-							final_size *= 1.1f;
-						}
-
-						if(g_left_down_this_frame) {
-							g_ui.clicked_arr[i] = true;
-						}
-					}
-					s_v2 final_pos = pos;
-					s_v2 diff = final_size - size;
-					final_pos -= diff * 0.5f;
-					draw_quad_screen_topleft(final_pos, (float)widget.depth, final_size, color);
-				}
-				pos += advance;
-			}
-		}
-		g_ui.widget_arr.count -= children_count + 1;
-		#endif
 	}
 
 	g_ui.depth -= 1;
 }
 
-func b8 ui_widget(int flags)
+func int ui_widget(int flags, s_ui_optional optional)
 {
+	int my_index = g_ui.widget_arr.count;
 	s_ui_widget new_widget = zero;
 	new_widget.depth = g_ui.depth;
-	new_widget.type = 1;
 	new_widget.parent = -1;
 	new_widget.flags = flags;
+	new_widget.optional = optional;
 	for(int i = 0; i < g_ui.widget_arr.count; i += 1) {
 		s_ui_widget widget = g_ui.widget_arr[i];
 		if(widget.depth == g_ui.depth - 1) {
@@ -1967,7 +1960,18 @@ func b8 ui_widget(int flags)
 		}
 	}
 	g_ui.widget_arr.add(new_widget);
-	b8 result = g_ui.clicked_arr[g_ui.widget_arr.count - 1];
+
+	// if(g_ui.data_arr[my_index].size.x <= 0) {
+	// 	g_ui.data_arr[my_index].size = size;
+	// }
+
+	int result = 0;
+	if(g_ui.hot_index == my_index) {
+		result = g_ui.hot_state;
+		if(result & e_ui_state_clicked) {
+			play_sound(g_sound_pop, false);
+		}
+	}
 	return result;
 }
 
@@ -1996,7 +2000,12 @@ func void ui_process_size(int curr_i, s_v2 size)
 {
 	int direct_children = 0;
 	s_ui_widget* curr_widget = &g_ui.widget_arr[curr_i];
-	curr_widget->out_size = size;
+	if(curr_widget->optional.size.x > 0) {
+		curr_widget->out_size = curr_widget->optional.size;
+	}
+	else {
+		curr_widget->out_size = size;
+	}
 	for(int widget_i = curr_i + 1; widget_i < g_ui.widget_arr.count; widget_i += 1) {
 		s_ui_widget widget = g_ui.widget_arr[widget_i];
 		if(widget.depth <= curr_widget->depth) { break; }
@@ -2004,9 +2013,27 @@ func void ui_process_size(int curr_i, s_v2 size)
 		direct_children += 1;
 	}
 
-	s_v2 children_size = v2(
+	int num_auto_sized_children = 0;
+	s_v2 space = v2(
 		curr_widget->out_size.x - c_margin * 2,
-		(curr_widget->out_size.y - c_margin * 2 - (c_padding * (direct_children - 1))) / direct_children
+		curr_widget->out_size.y - c_margin * 2
+	);
+
+	for(int widget_i = curr_i + 1; widget_i < g_ui.widget_arr.count; widget_i += 1) {
+		s_ui_widget widget = g_ui.widget_arr[widget_i];
+		if(widget.depth <= curr_widget->depth) { break; }
+		if(widget.depth != curr_widget->depth + 1) { continue; }
+		if(widget.optional.size.x > 0) {
+			space.y -= widget.optional.size.y;
+		}
+		else {
+			num_auto_sized_children += 1;
+		}
+	}
+
+	s_v2 children_size = v2(
+		space.x,
+		(space.y - c_padding * (num_auto_sized_children - 1)) / num_auto_sized_children
 	);
 
 	for(int widget_i = curr_i + 1; widget_i < g_ui.widget_arr.count; widget_i += 1) {
@@ -2021,7 +2048,14 @@ func void ui_process_pos(int curr_i, s_v2 pos)
 {
 	int direct_children = 0;
 	s_ui_widget* curr_widget = &g_ui.widget_arr[curr_i];
-	curr_widget->out_pos = pos;
+	if(curr_widget->optional.bottom_right) {
+		assert(curr_widget->parent >= 0);
+		s_ui_widget parent = g_ui.widget_arr[curr_widget->parent];
+		curr_widget->out_pos = parent.out_pos + parent.out_size - curr_widget->out_size;
+	}
+	else {
+		curr_widget->out_pos = pos;
+	}
 
 	s_v2 curr_pos = pos + v2(c_margin);
 
@@ -2053,4 +2087,57 @@ func void on_failed_assert(char* condition, char* file, int line)
 	#else
 	*(int*)0 = 0;
 	#endif
+}
+
+func void audio_callback(void *userdata, SDL_AudioStream *stream, int additional_amount, int total_amount)
+{
+	(void)total_amount;
+	(void)userdata;
+
+	int num_samples = additional_amount / sizeof(s16);
+	s16* to_submit = (s16*)calloc(1, num_samples * sizeof(s16));
+	for(int sample_i = 0; sample_i < num_samples; sample_i += 1) {
+		int total = 0;
+		for(int sound_i = 0; sound_i < g_sound_to_play_arr.count; sound_i += 1) {
+			s_playing_sound* sound = &g_sound_to_play_arr[sound_i];
+			total += ((s16*)sound->sound.data)[sound->cursor];
+			sound->cursor += 1;
+			if(sound->cursor >= sound->sound.sample_count) {
+				if(sound->loop) {
+					sound->cursor = 0;
+				}
+				else {
+					g_sound_to_play_arr.remove_and_swap(sound_i);
+					sound_i -= 1;
+				}
+			}
+		}
+		total = clamp(total, -(s32)(c_max_s16), (s32)c_max_s16);
+		to_submit[sample_i] = (s16)total;
+	}
+	SDL_PutAudioStreamData(stream, to_submit, num_samples * sizeof(s16));
+	free(to_submit);
+}
+
+func void play_sound(s_sound sound, b8 loop)
+{
+	s_playing_sound playing_sound = zero;
+	playing_sound.sound = sound;
+	playing_sound.loop = loop;
+	g_sound_to_play_arr.add(playing_sound);
+}
+
+func s_sound load_sound(char* path)
+{
+	s_sound result = zero;
+	SDL_AudioSpec wav_spec = zero;
+	u32 temp_len = 0;
+	bool success = SDL_LoadWAV(path, &wav_spec, &result.data, &temp_len);
+
+	assert(success);
+	assert(wav_spec.freq == 44100);
+	assert(wav_spec.channels == 2);
+
+	result.sample_count = (int)temp_len / sizeof(s16);
+	return result;
 }

@@ -61,6 +61,13 @@ enum e_ui_flag
 	e_ui_flag_draggable = 1 << 0,
 	e_ui_flag_clickable = 1 << 1,
 	e_ui_flag_dynamic = 1 << 2,
+	e_ui_flag_resizable = 1 << 3,
+};
+
+enum e_ui_state
+{
+	e_ui_state_clicked = 1 << 0,
+	e_ui_state_pressed = 1 << 1,
 };
 
 struct s_v2
@@ -129,6 +136,7 @@ struct s_list
 	t& operator[](int index);
 	t* add(t new_element);
 	t pop_last();
+	void remove_and_swap(int index);
 };
 
 #pragma pack(push, 1)
@@ -208,33 +216,52 @@ struct s_box
 	s_v3 vertex_arr[8];
 };
 
-struct s_speed_buff
+struct s_ui_optional
 {
-	b8 active;
-	float start_yaw;
-	b8 hit_arr[2];
+	b8 bottom_right;
+	s_v2 size;
 };
 
 struct s_ui_widget
 {
 	int flags;
 	int parent;
-	int type;
 	int depth;
 	s_v2 pos;
-	s_v2 size;
+	s_ui_optional optional;
 
 	s_v2 out_pos;
 	s_v2 out_size;
 };
 
+struct s_ui_data
+{
+	s_v2 size;
+};
+
 struct s_ui
 {
+	int hot_index;
+	int hot_state;
+
 	int hovered;
 	int depth;
-	b8 clicked_arr[64];
 	s_list<s_ui_widget, 64> widget_arr;
 	s_list<int, 64> stack_arr;
+	s_ui_data data_arr[64];
+};
+
+struct s_sound
+{
+	int sample_count;
+	u8* data;
+};
+
+struct s_playing_sound
+{
+	b8 loop;
+	s_sound sound;
+	int cursor;
 };
 
 // -----------------------------------------------------------------------------------------------------------------------------
@@ -381,7 +408,10 @@ func s_m4 look_at(s_v3 eye, s_v3 target, s_v3 up);
 func float smoothstep(float edge0, float edge1, float x);
 func float lerp(float a, float b, float t);
 func float ilerp(float a, float b, float c);
-func float clamp(float curr, float min_val, float max_val);
+
+template <typename t>
+func t clamp(t curr, t min_val, t max_val);
+
 func float smoothstep2(float edge0, float edge1, float x);
 func s_v3 get_triangle_normal(s_triangle triangle);
 func int roundfi(float x);
@@ -427,9 +457,9 @@ func void draw_screen(s_v2 pos, s_v2 size, s_v4 color);
 func SDL_EnumerationResult enumerate_directory_callback(void *userdata, const char *dirname, const char *fname);
 func b8 is_shader_valid(s_shader_program program);
 func void draw_quad_screen(s_v2 pos, float z, s_v2 size, s_v4 color);
-func b8 ui_push_widget(s_v2 pos, s_v2 size, int flags);
+func int ui_push_widget(s_v2 pos, s_v2 size, int flags);
 func void ui_pop_widget();
-func b8 ui_widget(int flags);
+func int ui_widget(int flags, s_ui_optional optional);
 func b8 rect_vs_rect_topleft(s_v2 pos0, s_v2 size0, s_v2 pos1, s_v2 size1);
 func b8 mouse_vs_rect_topleft(s_v2 pos, s_v2 size);
 func s_v4 multiply_rgb(s_v4 a, float b);
@@ -437,3 +467,6 @@ func void process_ui();
 func void ui_process_size(int widget_i, s_v2 size);
 func void ui_process_pos(int curr_i, s_v2 pos);
 func void on_failed_assert(char* condition, char* file, int line);
+func void audio_callback(void *userdata, SDL_AudioStream *stream, int additional_amount, int total_amount);
+func void play_sound(s_sound sound, b8 loop);
+func s_sound load_sound(char* path);
