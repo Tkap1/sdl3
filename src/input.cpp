@@ -13,7 +13,7 @@ func void handle_input()
 				g_do_wireframe = !g_do_wireframe;
 			}
 			else if(event.key.key == SDLK_F) {
-				g_game.generate_terrain = true;
+				g_game.terrain_generated = true;
 			}
 			else if(event.key.key == SDLK_SPACE) {
 				g_player.want_to_jump_timestamp = g_game.update_time;

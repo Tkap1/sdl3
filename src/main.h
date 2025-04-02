@@ -276,7 +276,7 @@ struct s_game
 	b8 quit;
 	s_v3 player_wanted_dir;
 	float player_wanted_speed;
-	b8 generate_terrain;
+	b8 terrain_generated;
 	s_camera cam;
 	e_view_state view_state;
 	float update_time;

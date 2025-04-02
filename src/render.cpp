@@ -127,8 +127,8 @@ func void render(float interp_dt)
 		player_wanted_dir = v3_normalized(dir);
 	}
 
-	if(g_game.generate_terrain) {
-		g_game.generate_terrain = false;
+	if(!g_game.terrain_generated) {
+		g_game.terrain_generated = false;
 
 		{
 			constexpr int c_biome_count = 6;
