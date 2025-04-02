@@ -191,6 +191,7 @@ struct s_player
 	float want_to_shoot_timestamp;
 	float want_to_jump_timestamp;
 	b8 on_ground;
+	s_v3 prev_pos;
 	s_v3 pos;
 	s_v3 vel;
 };
@@ -262,6 +263,30 @@ struct s_playing_sound
 	b8 loop;
 	s_sound sound;
 	int cursor;
+};
+
+struct s_camera
+{
+	float yaw;
+	float pitch;
+};
+
+struct s_game
+{
+	b8 quit;
+	s_v3 player_wanted_dir;
+	float player_wanted_speed;
+	b8 generate_terrain;
+	s_camera cam;
+	e_view_state view_state;
+	float update_time;
+	float render_time;
+
+	s_shader_program mesh_shader;
+	s_shader_program depth_only_shader;
+	SDL_GPUGraphicsPipeline* mesh_fill_pipeline;
+	SDL_GPUGraphicsPipeline* mesh_line_pipeline;
+	SDL_GPUGraphicsPipeline* mesh_depth_only_pipeline;
 };
 
 // -----------------------------------------------------------------------------------------------------------------------------
@@ -470,3 +495,7 @@ func void on_failed_assert(char* condition, char* file, int line);
 func void audio_callback(void *userdata, SDL_AudioStream *stream, int additional_amount, int total_amount);
 func void play_sound(s_sound sound, b8 loop);
 func s_sound load_sound(char* path);
+func void render(float interp_dt);
+func void update();
+func s_v3 get_cam_front(s_camera cam);
+func s_v3 lerp_v3(s_v3 a, s_v3 b, float t);
