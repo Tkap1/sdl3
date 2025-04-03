@@ -271,6 +271,19 @@ struct s_camera
 	float pitch;
 };
 
+struct s_render_pass_data
+{
+	SDL_GPUGraphicsPipeline* pipeline;
+	SDL_GPUColorTargetInfo* color_info;
+	int color_info_count;
+	SDL_GPUDepthStencilTargetInfo* depth_info;
+	void* vertex_uniform_data;
+	int vertex_uniform_data_size;
+	void* fragment_uniform_data;
+	int fragment_uniform_data_size;
+	s_list<SDL_GPUTextureSamplerBinding, 2> sampler_arr;
+};
+
 struct s_game
 {
 	b8 quit;

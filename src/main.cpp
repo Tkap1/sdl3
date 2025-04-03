@@ -67,6 +67,7 @@ global s_sound g_sound_pop;
 global s_sound g_sound_cakez;
 global f64 g_accumulator = 0;
 global s_game g_game;
+global SDL_GPUCommandBuffer* g_cmdbuf;
 
 #include "input.cpp"
 #include "update.cpp"
